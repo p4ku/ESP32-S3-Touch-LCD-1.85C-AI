@@ -1,0 +1,8 @@
+[
+  { "name": "Capital FM", "url": "http://vis.media-ice.musicradio.com/CapitalMP3" },
+  { "name": "Radio Paradise", "url": "http://stream.radioparadise.com/mp3-192" },
+  { "name": "RMF FM", "url": "http://rmfstream1.interia.pl:8000/rmf_fm" },
+  { "name": "RTL2 Le Son Pop-Rock", "url": "https://streaming.radio.rtl2.fr/rtl2-1-44-128?type=.mp3/;stream.mp3" },
+  { "name": "Radio ZET", "url": "https://zt03.cdn.eurozet.pl/zet-tun.mp3" },
+  { "name": "BBC Radio 3 Clasic", "url": "http://bbcmedia.ic.llnwd.net/stream/bbcmedia_radio3_mf_p" }
+]

@@ -1,0 +1,7 @@
+Capital FM|http://vis.media-ice.musicradio.com/CapitalMP3
+Radio Paradise|http://stream.radioparadise.com/mp3-192
+RMF FM|http://rmfstream1.interia.pl:8000/rmf_fm
+RTL2 Le Son Pop-Rock|https://streaming.radio.rtl2.fr/rtl2-1-44-128?type=.mp3/;stream.mp3
+Radio ZET|https://zt03.cdn.eurozet.pl/zet-tun.mp3
+BBC Radio 3 Clasic|http://bbcmedia.ic.llnwd.net/stream/bbcmedia_radio3_mf_p
+HIT RADIO FFH|http://mp3.ffh.de/radioffh/hqlivestream.mp3

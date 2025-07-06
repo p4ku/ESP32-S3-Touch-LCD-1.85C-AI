@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ESP32-S3 File Explorer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Navigation Menu -->
+    <nav>
+        <a href="/">Home</a>
+        <a href="/file_explorer.html">File Explorer</a>
+    </nav>
+
+<h1>📁 ESP32-S3-Touch-LCD-1.85C File Explorer</h1>
+
+<div class="toolbar">
+  <button onclick="goUp()">⬆ Go Up</button>
+  <button onclick="createFolder()">📁 New Folder</button>
+  <input type="file" id="fileInput">
+  <button onclick="uploadFile()">⤴ Upload</button>
+</div>
+
+<div class="path-display" id="currentPathDisplay">/</div>
+
+<div class="entry header">
+  <div>Name</div><div>Size</div><div>Actions</div><div>Delete</div>
+</div>
+<div id="fileList"></div>
+
+<script>
+let currentPath = decodeURIComponent(new URLSearchParams(window.location.search).get('path') || '/');
+
+function updatePathInURL() {
+  const url = new URL(window.location.href);
+  url.searchParams.set('path', currentPath);
+  window.history.replaceState({}, '', url);
+}
+
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + units[i];
+}
+
+function goUp() {
+  const parts = currentPath.split('/').filter(Boolean);
+  parts.pop();
+  currentPath = '/' + parts.join('/');
+  updatePathInURL();
+  loadFiles();
+}
+
+async function loadFiles() {
+  updatePathInURL();
+  document.getElementById('currentPathDisplay').innerText = currentPath;
+
+  const res = await fetch(`/listfiles?type=json&path=${encodeURIComponent(currentPath)}`);
+  const items = await res.json();
+
+  const container = document.getElementById('fileList');
+  container.innerHTML = '';
+
+  // Sort items: directories first, then files, both alphabetically
+  items.sort((a, b) => {
+    if (a.isDir && !b.isDir) return -1;
+    if (!a.isDir && b.isDir) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  items.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'entry';
+
+    // Create name
+    const nameCell = document.createElement('div');
+    nameCell.innerText = item.name;
+    if (item.isDir) {
+      nameCell.style.fontWeight = 'bold';
+      nameCell.style.cursor = 'pointer';
+      nameCell.onclick = () => {
+        currentPath = currentPath.replace(/\/$/, '') + '/' + item.name;
+        loadFiles();
+      };
+    }
+
+    // Create size
+    const sizeCell = document.createElement('div');
+    sizeCell.innerText = item.isDir ? '-' : formatBytes(item.size);
+
+    const actionCell = document.createElement('div');
+
+    // Create rename button
+    const renameBtn = document.createElement('button');
+    renameBtn.innerText = '✏ Rename';
+    renameBtn.onclick = () => {
+      const oldPath = currentPath.replace(/\/$/, '') + '/' + item.name;
+      const newName = prompt("New name:", item.name);
+      if (!newName || newName === item.name) return;
+      const newPath = currentPath.replace(/\/$/, '') + '/' + newName;
+      fetch("/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `from=${encodeURIComponent(oldPath)}&to=${encodeURIComponent(newPath)}`
+      }).then(() => loadFiles());
+    };
+    actionCell.appendChild(renameBtn);
+
+    if (!item.isDir) {
+      // Create download button
+      const downloadBtn = document.createElement('button');
+      downloadBtn.innerText = '⬇ Download';
+      downloadBtn.onclick = () => {
+        const fullPath = currentPath.replace(/\/$/, '') + '/' + item.name;
+        const a = document.createElement('a');
+        a.href = `/download?path=${encodeURIComponent(fullPath)}`;
+        a.download = item.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      };
+      actionCell.appendChild(downloadBtn);
+
+      // Create preview button
+      const previewBtn = document.createElement('button');
+      previewBtn.innerText = '🔍 Preview';
+      previewBtn.onclick = () => {
+        const fullPath = currentPath.replace(/\/$/, '') + '/' + item.name;
+        window.open(`/preview?path=${encodeURIComponent(fullPath)}`, '_blank');
+      };
+      actionCell.appendChild(previewBtn);
+
+
+    } else {
+      const moveBtn = document.createElement('button');
+      moveBtn.innerText = '↪ Move Here';
+      moveBtn.onclick = () => {
+        const targetDir = currentPath.replace(/\/$/, '') + '/' + item.name;
+        const src = prompt("File to move:");
+        if (src) {
+          const from = currentPath.replace(/\/$/, '') + '/' + src;
+          const to = targetDir + '/' + src;
+          fetch("/move", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+          }).then(() => loadFiles());
+        }
+      };
+      actionCell.appendChild(moveBtn);
+    }
+
+    // Create delete button
+    const deleteCell = document.createElement('div');
+    const delBtn = document.createElement('button');
+    delBtn.innerText = '🗑 Delete';
+    delBtn.onclick = () => {
+      const path = currentPath.replace(/\/$/, '') + '/' + item.name;
+      if (confirm(`Are you sure you want to delete "${item.name}"?`)) {
+        fetch("/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: `path=${encodeURIComponent(path)}`
+        }).then(() => loadFiles());
+      }
+    };
+    deleteCell.appendChild(delBtn);
+
+    row.appendChild(nameCell);
+    row.appendChild(sizeCell);
+    row.appendChild(actionCell);
+    row.appendChild(deleteCell);
+
+    container.appendChild(row);
+  });
+}
+
+function uploadFile() {
+  const fileInput = document.getElementById('fileInput');
+  if (!fileInput.files.length) return alert("Select a file first.");
+
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  formData.append('path', currentPath);
+
+  fetch('/upload', { method: 'POST', body: formData })
+    .then(resp => resp.text())
+    .then(alert)
+    .then(loadFiles);
+}
+
+function createFolder() {
+  const name = prompt("New folder name:");
+  if (!name) return;
+
+  const fullPath = currentPath.replace(/\/$/, '') + '/' + name;
+  fetch("/mkdir", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `path=${encodeURIComponent(fullPath)}`
+  })
+    .then(resp => resp.text())
+    .then(alert)
+    .then(loadFiles);
+}
+
+window.addEventListener('DOMContentLoaded', loadFiles);
+</script>
+</body>
+</html>

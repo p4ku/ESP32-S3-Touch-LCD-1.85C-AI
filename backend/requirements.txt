@@ -1,0 +1,6 @@
+openai
+websockets
+gTTS
+fastapi
+python-multipart
+uvicorn

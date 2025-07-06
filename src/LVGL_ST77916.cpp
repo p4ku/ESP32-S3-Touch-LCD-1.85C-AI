@@ -1,0 +1,204 @@
+#include "LVGL_ST77916.h"
+#include "Touch_CST816.h"
+#include "MIC_MSM.h"
+
+Arduino_GFX* gfx;
+
+bool backlight_on = true;
+unsigned long last_touch_time = 0;
+const unsigned long INACTIVITY_TIMEOUT_MS = 30000;
+
+uint32_t bufSize;
+lv_display_t *disp;
+lv_color_t *disp_draw_buf;
+lv_color_t *disp_draw_buf_2;
+
+
+void increase_lvgl_tick(void *arg)
+{
+    /* Tell LVGL how many milliseconds has elapsed */
+    lv_tick_inc(LVGL_TICK_PERIOD_MS);
+}
+
+uint32_t millis_cb(void)
+{
+  return millis();
+}
+
+void LCD_SetBacklight(bool on) {
+    pinMode(LCD_BL, OUTPUT);
+    digitalWrite(LCD_BL, on ? HIGH : LOW);
+    backlight_on = on;
+    // if true,  reset the last touch time
+    // to prevent the screen from going off
+    if (on) {
+        last_touch_time = millis();
+    }
+}
+
+void Lvgl_Init()
+{
+    // Initialize Quad SPI bus for LCD
+    Arduino_ESP32QSPI *bus = new Arduino_ESP32QSPI(
+      LCD_CS,    // Chip Select pin
+      LCD_SCK,   // SPI Clock pin
+      LCD_D0,    // Data 0 pin (MOSI)
+      LCD_D1,    // Data 1 pin (MISO/QSPI)
+      LCD_D2,    // Data 2 pin (QSPI)
+      LCD_D3,    // Data 3 pin (QSPI)
+      true       // Enable Quad SPI mode
+    );
+
+    // Initialize ST77916 LCD driver
+    // Arduino_ST77916 
+    gfx = new Arduino_ST77916(
+      bus,        // Data bus
+      LCD_RST,    // Reset pin (-1 if external)
+      0,          // Screen rotation
+      true,      // ISP
+      SCREEN_WIDTH, 
+      SCREEN_HEIGHT
+    );
+
+    if (!gfx->begin(QSPI_FREQ)) {
+      Serial.println("LCD initialization failed!");
+      while (true) delay(50);
+    }
+
+    pinMode(LCD_BL, OUTPUT);
+    digitalWrite(LCD_BL, HIGH); // Turn on backlight
+
+    gfx->fillScreen(BLACK);
+    gfx->setTextSize(2);
+    gfx->setTextColor(WHITE);
+    gfx->setCursor(75, 10+40);
+    gfx->println("LCD Initialized!");
+
+    last_touch_time = millis();
+
+    // Initialise LVGL
+    lv_init();
+
+    /*Set a tick source so that LVGL will know how much time elapsed. */
+    lv_tick_set_cb(millis_cb);
+
+    // 1440 1080
+    bufSize = SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(lv_color_t) / 2; // 1 row
+
+    // 1440
+    // disp_draw_buf = (lv_color_t *)heap_caps_malloc(bufSize, MALLOC_CAP_INTERNAL);
+    disp_draw_buf = (lv_color_t *)heap_caps_malloc(bufSize, MALLOC_CAP_SPIRAM);
+    disp_draw_buf_2 = (lv_color_t *)heap_caps_malloc(bufSize, MALLOC_CAP_SPIRAM);
+
+    // bufSize = SCREEN_WIDTH * 4; // * 40; // Use partial rendering buffer
+
+    // 2880
+    // disp_draw_buf = (lv_color_t *)heap_caps_malloc(bufSize * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+
+    // bufSize = SCREEN_WIDTH * SCREEN_HEIGHT / 8;  // Full screen
+
+
+    // 2160
+    // disp_draw_buf = (lv_color_t *)heap_caps_malloc(
+    //     bufSize / 2 * sizeof(lv_color_t),
+    //     MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT
+    // );
+
+    Serial.println("Buffer size:");
+    Serial.println(bufSize);
+
+
+    if (!disp_draw_buf)
+    {
+      Serial.println("LVGL disp_draw_buf allocate failed!");
+    }
+    else
+    {
+      disp = lv_display_create(SCREEN_WIDTH, SCREEN_HEIGHT);
+      lv_display_set_flush_cb(disp, my_disp_flush);
+
+      lv_display_set_buffers(disp, disp_draw_buf, disp_draw_buf_2, bufSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
+      // lv_display_set_buffers(disp, disp_draw_buf, NULL, bufSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
+
+
+      /*Initialize the (dummy) input device driver*/
+      lv_indev_t *indev = lv_indev_create();
+      lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER); /*Touchpad should have POINTER type*/
+      lv_indev_set_read_cb(indev, Lvgl_Touchpad_Read);
+
+      // ESP-IDF hardware timer that calls increase_lvgl_tick()
+      // Tell LVGL how much time has passed, crucial for animations, input timing, and scheduling internal tasks.
+      const esp_timer_create_args_t lvgl_tick_timer_args = {
+        .callback = &increase_lvgl_tick,        // Function to call
+        .dispatch_method = ESP_TIMER_TASK,      // Run in ESP-IDF timer task (not ISR)
+        .name = "lvgl_tick",                    // Debug-friendly name
+        .skip_unhandled_events = true           // Skip if missed (prevents backlog)
+      };
+
+      esp_timer_handle_t lvgl_tick_timer = NULL;
+      esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer);
+      esp_timer_start_periodic(lvgl_tick_timer, LVGL_TICK_PERIOD_MS * 1000);
+
+  //     /* Option 3: Or try out a demo. Don't forget to enable the demos in lv_conf.h. E.g. LV_USE_DEMOS_WIDGETS
+  //      * -------------------------------------------------------------------------------------------
+  //      */
+  //     // lv_demo_widgets();
+  //     // lv_demo_benchmark();
+  //     // lv_demo_keypad_encoder();
+  //     // lv_demo_music();
+  //     // lv_demo_stress();
+
+
+    }
+}
+
+void Lvgl_Touchpad_Read(lv_indev_t *indev_drv, lv_indev_data_t *data) {
+  
+  if (Touch_interrupts) {
+    Touch_interrupts = false;
+    detachInterrupt(CST816_INT_PIN);
+    Touch_Read_Data();
+    attachInterrupt(CST816_INT_PIN, Touch_CST816_ISR, FALLING);
+  }
+
+  // Always update last touch time
+  if (touch_data.points != 0x00) {
+    last_touch_time = millis();
+
+    if (!backlight_on) {
+      LCD_SetBacklight(true);  // Wake screen
+      MIC_SR_Stop(); // Stop any ongoing speech recognition
+
+      // Clear current touch, do not send to UI
+      data->state = LV_INDEV_STATE_REL;
+      data->point.x = 0;
+      data->point.y = 0;
+      return;
+    }
+
+    data->point.x = touch_data.x;
+    data->point.y = touch_data.y;
+    data->state = LV_INDEV_STATE_PR;
+  } else {
+    data->state = LV_INDEV_STATE_REL;
+  }
+
+  touch_data.x = 0;
+  touch_data.y = 0;
+  touch_data.points = 0;
+  touch_data.gesture = NONE;
+}
+
+/* LVGL calls it when a rendered image needs to copied to the display*/
+void my_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
+{
+  uint32_t w = lv_area_get_width(area);
+  uint32_t h = lv_area_get_height(area);
+
+  gfx->draw16bitRGBBitmap(area->x1, area->y1, (uint16_t *)px_map, w, h);
+
+  /*Call it to tell LVGL you are ready*/
+  lv_disp_flush_ready(disp);
+}
+
+

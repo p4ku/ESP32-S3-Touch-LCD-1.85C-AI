@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ESP32-S3 Audio Control Panel</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Navigation Menu -->
+    <nav>
+        <a href="/">Home</a>
+        <a href="/file_explorer.html">File Explorer</a>
+    </nav>
+
+    <h1>ESP32-S3-Touch-LCD-1.85C Control Panel</h1>
+
+    <section>
+        <h2>ESP Status</h2>
+        <pre id="statusOutput">Loading status...</pre>
+    </section>
+
+
+    <section>
+        <h2>Audio Volume</h2>
+        <input type="range" id="volumeSlider" min="0" max="21" value="10" onchange="setVolume()">
+        <button onclick="setVolume()">Set Volume</button>
+    </section>
+
+<section>
+    <h2>Stream Audio from URL</h2>
+    <label for="stationSelect">Choose a station:</label>
+    <select id="stationSelect" onchange="selectStation()">
+        <option value="">-- Custom URL or Select Station --</option>
+    </select>
+
+    <input type="text" id="urlInput" placeholder="http://example.com/stream.mp3">
+    <button onclick="playUrl()" class="play">Play</button>
+    <button onclick="stopPlayback()" class="stop">Stop</button>
+</section>
+
+    <section>
+        <h2>Text to Speech</h2>
+        <input type="text" id="ttsText" placeholder="Enter text">
+        <select id="ttsLang">
+            <option value="en">English</option>
+            <option value="pl">Polish</option>
+        </select>
+        <button onclick="speak()">Speak</button>
+    </section>
+
+
+    <section>
+        <h2>Upload File to SD Card</h2>
+        <form id="uploadForm" method="POST" enctype="multipart/form-data">
+            <input type="file" name="file" required>
+            <button type="submit">Upload</button>
+        </form>
+        <div id="uploadStatus"></div>
+    </section>
+
+<section>
+    <h2>Play File from SD Card</h2>
+    <button onclick="loadFileList()" class="refresh">Refresh File List</button>
+    <div class="file-list" id="fileList">
+        <div class="file-row header">
+            <span class="name">File Name</span>
+            <span class="size">Size</span>
+            <span class="action">Action</span>
+        </div>
+    </div>
+</section>
+
+<section>
+  <h2>🎙️ Live Microphone Stream</h2>
+  <button onclick="startMicStream()" class="play">▶ Start Mic Stream</button>
+  <button onclick="stopMicStream()" class="stop">⏹ Stop</button>
+  <div style="margin-top: 1em;">
+    <label>Volume Level:</label>
+    <div id="vuContainer" style="width: 250px; height: 16px; background: #eee; border: 1px solid #ccc;">
+      <div id="vuLevel" style="height: 100%; width: 0%; background: linear-gradient(to right, #0f0, #ff0, #f00); transition: width 0.1s;"></div>
+    </div>
+  </div>
+</section>
+
+
+<script>
+    // Upload file
+    document.getElementById('uploadForm').onsubmit = async function(e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+        const response = await fetch('/upload', { method: 'POST', body: formData });
+        document.getElementById('uploadStatus').innerText = await response.text();
+    };
+
+    function setVolume() {
+        const value = document.getElementById('volumeSlider').value;
+        fetch('/volume', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'value=' + value
+        });
+    }
+
+    function playUrl() {
+        const url = document.getElementById('urlInput').value;
+        fetch('/play', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'url=' + encodeURIComponent(url)
+        });
+    }
+
+    function stopPlayback() {
+        fetch('/stop', { method: 'POST' });
+    }
+
+    function speak() {
+        const text = document.getElementById('ttsText').value;
+        const lang = document.getElementById('ttsLang').value;
+        fetch('/speech', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'text=' + encodeURIComponent(text) + '&lang=' + lang
+        });
+    }
+
+
+    let lastVolume = null;
+
+    function setVolume() {
+        const value = document.getElementById('volumeSlider').value;
+        if (value !== lastVolume) {
+            fetch('/volume', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'value=' + value
+            });
+            lastVolume = value;
+        }
+    }
+
+    async function loadVolume() {
+        try {
+            const resp = await fetch('/volume');
+            const text = await resp.text();
+            const vol = parseInt(text.trim());
+            if (!isNaN(vol)) {
+                document.getElementById('volumeSlider').value = vol;
+            }
+        } catch (e) {
+            console.warn("Failed to fetch current volume");
+        }
+    }
+
+    async function loadStatus() {
+        try {
+            const resp = await fetch('/status');
+            const text = await resp.text();
+            document.getElementById('statusOutput').innerText = text;
+        } catch (err) {
+            document.getElementById('statusOutput').innerText = 'Failed to load status.';
+        }
+    }
+
+    async function loadFileList() {
+        const resp = await fetch('/listfiles?ext=.mp3&path=/music&type=json');
+        const files = await resp.json();
+        const fileList = document.getElementById('fileList');
+
+        // Clear and restore header
+        fileList.innerHTML = `
+            <div class="file-row header">
+                <span class="name">File Name</span>
+                <span class="size">Size</span>
+                <span class="action">Action</span>
+            </div>
+        `;
+
+        if (!files.length) {
+            const row = document.createElement('div');
+            row.className = 'file-row';
+            row.innerHTML = '<span>No .mp3 files found.</span>';
+            fileList.appendChild(row);
+            return;
+        }
+
+
+    files.forEach(file => {
+        const row = document.createElement('div');
+        row.className = 'file-row';
+
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.innerText = file.name;
+
+        const size = document.createElement('span');
+        size.className = 'size';
+        size.innerText = `${file.size} B`;
+
+        // Play button
+        const playBtn = document.createElement('button');
+        playBtn.className = 'play';
+        playBtn.innerText = '▶ Play';
+        playBtn.onclick = () => {
+            let path = file.name;
+            if (!path.startsWith("/")) path = "/" + path;
+            fetch('/playfile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'path=/music/' + encodeURIComponent(path)
+            });
+        };
+
+        const playContainer = document.createElement('span');
+        playContainer.className = 'action';
+        playContainer.appendChild(playBtn);
+
+        row.appendChild(name);
+        row.appendChild(size);
+        row.appendChild(playContainer);
+
+        fileList.appendChild(row);
+        });
+    }
+
+    async function loadStations() {
+        try {
+            const resp = await fetch('/stations');
+            const stations = await resp.json();
+            const select = document.getElementById('stationSelect');
+
+            stations.forEach(station => {
+                const opt = document.createElement('option');
+                opt.value = station.url;
+                opt.textContent = station.name;
+                select.appendChild(opt);
+            });
+        } catch (e) {
+            console.warn('Failed to load station list');
+        }
+    }
+
+    function selectStation() {
+        const dropdown = document.getElementById('stationSelect');
+        const url = dropdown.value;
+        if (url) {
+            document.getElementById('urlInput').value = url;
+        }
+    }
+    // -------------------
+    let audioCtx, analyser, vuMeter, keepReading = false, micAbortController;
+    let leftover = new Uint8Array(0); // for handling split samples
+
+    function startMicStream() {
+        if (!audioCtx || audioCtx.state === "closed") {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        } else if (audioCtx.state === "suspended") {
+            audioCtx.resume();
+        }
+
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        vuMeter = document.getElementById("vuLevel");
+
+        micAbortController = new AbortController();
+        const signal = micAbortController.signal;
+
+        fetch("/stream", { signal }).then(async response => {
+            if (!response.ok) throw new Error("Failed to connect to stream");
+            const reader = response.body.getReader();
+            const sampleRate = 16000;
+            keepReading = true;
+
+            while (keepReading) {
+                const { value, done } = await reader.read();
+                if (done || !value || value.length === 0) break;
+
+                let combined = new Uint8Array(leftover.length + value.length);
+                combined.set(leftover, 0);
+                combined.set(value, leftover.length);
+
+                let sampleCount = Math.floor(combined.length / 2);
+                let usableBytes = sampleCount * 2;
+
+                let pcmView = new DataView(combined.buffer, 0, usableBytes);
+                let floatArray = new Float32Array(sampleCount);
+                for (let i = 0; i < sampleCount; i++) {
+                    floatArray[i] = pcmView.getInt16(i * 2, true) / 32768;
+                }
+
+                let audioBuffer = audioCtx.createBuffer(1, floatArray.length, sampleRate);
+                audioBuffer.copyToChannel(floatArray, 0);
+                let source = audioCtx.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(analyser);
+                analyser.connect(audioCtx.destination);
+                source.start();
+
+                leftover = combined.slice(usableBytes); // Save leftover for next frame
+                drawVolume();
+            }
+        }).catch(err => {
+            if (err.name === "AbortError") {
+                console.log("Mic stream aborted.");
+            } else {
+                console.error("Stream error:", err);
+            }
+        });
+    }
+
+    function stopMicStream() {
+        keepReading = false;
+        if (micAbortController) micAbortController.abort();
+        if (vuMeter) vuMeter.style.width = "0%";
+        if (audioCtx && audioCtx.state === "running") {
+            audioCtx.suspend();
+        }
+    }
+
+    function drawVolume() {
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteTimeDomainData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+            let v = (dataArray[i] - 128) / 128;
+            sum += v * v;
+        }
+        let rms = Math.sqrt(sum / dataArray.length);
+        let volume = Math.min(1, rms * 2);
+        vuMeter.style.width = Math.round(volume * 100) + "%";
+        if (keepReading) requestAnimationFrame(drawVolume);
+    }
+    // -------------------
+
+
+
+    // Auto-refresh every 10 seconds
+    setInterval(loadStatus, 10000);
+
+    window.addEventListener('DOMContentLoaded', () => {
+        loadFileList();
+        loadStatus();
+        loadVolume();
+        loadStations();
+    });
+
+</script>
+</body>
+</html>
+
