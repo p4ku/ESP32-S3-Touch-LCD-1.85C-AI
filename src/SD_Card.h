@@ -3,6 +3,7 @@
 
 #include "Arduino.h"
 #include <cstring>
+#include <vector>
 #include "FS.h"
 #include "SD_MMC.h"
 
@@ -20,6 +21,8 @@ void SD_Init();
 bool Create_File_If_Not_Exists(const char* path);
 bool File_Search(const char* directory, const char* fileName);
 uint16_t Folder_retrieval(const char* directory, const char* fileExtension, char File_Name[][100], size_t File_Sizes[], uint16_t maxFiles); 
+std::vector<std::pair<String, String>> ReadInternetStations(const char* path = "/internet_stations.txt");
+void LoadSDCardMP3Files(std::vector<String>* fileList, const char* path = "/music/") ;
 
 // If srmodels.bin exists on SD card, write it to the model partition if needed
 void write_srmodels_bin_to_partition_if_needed(bool force = false);

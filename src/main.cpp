@@ -9,7 +9,7 @@
 #include "RTC_PCF85063.h"
 #include "Audio.h"
 #include "PCM5101.h"
-#include "GUI.h"
+#include "GUI/GUI.h"
 #include "MIC_MSM.h"
 #include "Touch_CST816.h"
 #include "HttpServer.h"
@@ -193,7 +193,7 @@ void setup() {
 
   Serial.println("Setup GUI");
   GUI_Init(audio);
-  GUI_MessageQueueInit();
+  // GUI_MessageQueueInit();
 
   Serial.println("Setup Http Server");
   HttpServer_Begin(audio);

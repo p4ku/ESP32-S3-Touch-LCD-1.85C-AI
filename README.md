@@ -4,13 +4,22 @@ This project implements a multi-modal, real-time voice assistant platform using 
 The project combines **offline and online speech processing**, a **touchscreen GUI**, **I2S audio**, **Internet radio**, **SD card playback**, and **a cloud-assisted LLM agent** with **WebSocket communication**. 
 
 It is designed for prototyping local AI interfaces with low-latency connectivity to a powerful backend.
-The project is based on [ESP32-S3-Touch-LCD-1.85C-BOX](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-1.85C), 
+The project is based on [ESP32-S3-Touch-LCD-1.85C-BOX](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-1.85C). 
+
+<table width="100%">
+  <tr>
+    <td width="33.3%"><img src="images/esp32-1.png" width="100%"/></td>
+    <td width="33.3%"><img src="images/esp32-2.png" width="100%"/></td>
+    <td width="33.3%"><img src="images/esp32-3.png" width="100%"/></td>
+  </tr>
+</table>
+
 
 ## Hardware Overview
 
 - **Board**: ESP32-S3-Touch-LCD-1.85C-BOX
 - **CPU**: ESP32-S3 (240 MHz dual core)
-- **Display**: 1.85" 280×240 LCD (ST77916)
+- **Display**: 1.85" 360×360 LCD (ST77916)
 - **Touch**: CST816T (I2C)
 - **Audio**:
   - Input: ICS-43434 microphone (I2S)
@@ -54,7 +63,7 @@ There is **no noticeable latency difference** between both methods due to networ
 - File-based audio playback via I2S
 
 
-## Assistant Backend Loop
+## AI Assistant Flow Diagram
 
 ```plaintext
 ┌────────┐
@@ -62,7 +71,7 @@ There is **no noticeable latency difference** between both methods due to networ
 └──┬─────┘
    │  (Record or Stream)
    ▼
-┌────────────┐     .WAV via HTTP  or  live PCM via WS
+┌────────────┐  .WAV via HTTP or RAW PCM via WebSocket
 │   ESP32    │ ──────────────────────────────────────▶
 │  Uploads   │     │ 
 └────────────┘     │  
@@ -277,8 +286,8 @@ Quantized8 Multinet5: MN5Q8_v2_english_8_0.9_0.90, beam search:v2, (Nov  5 2024 
 
 ## Other links
 
-Schematic:
-https://spotpear.com/wiki/ESP32-S3-N16R8-AI-DeepSeek-XiaoZhi-XiaGe-Qwen-DouBao-1.85-inch-Round-LCD.html
+ESP32-S3-Touch-LCD-1.85C-BOX Schematic:
+https://files.waveshare.com/wiki/ESP32-S3-Touch-LCD-1.85C/ESP32-S3-Touch-LCD-1.85C-Schematic.pdf
 
 Arduino_GFX:
 https://github.com/moononournation/Arduino_GFX/tree/master
@@ -289,28 +298,20 @@ https://docs.lvgl.io/master/examples.html
 ESP32-audioI2S PCM5101
 https://github.com/schreibfaul1/ESP32-audioI2S
 
-SD_MMC library
+SD_MMC library:
 https://github.com/espressif/arduino-esp32/blob/master/libraries/SD_MMC/README.md
 
+A Guide to Fusing ChatGPT with Espressif SOCs:
 https://developer.espressif.com/blog/unleashing-the-power-of-openai-and-esp-box-a-guide-to-fusing-chatgpt-with-espressif-socs/
 
-https://github.com/FabrikappAgency/esp32-realtime-voice-assistant/blob/main/README.md
+Building a Real-Time AI Voice Assistant on an ESP32 with OpenAI and Langchain:
+https://github.com/FabrikappAgency/esp32-realtime-voice-assistant/tree/main
 
 ElatoAI: Realtime Speech AI Agents for ESP32
 https://github.com/akdeb/ElatoAI/blob/main/README.md
 
-https://github.com/FabrikappAgency/esp32-realtime-voice-assistant/blob/main/ARTICLE.md
-
+That Project
 https://github.com/0015/ThatProject
 
-
-https://github.com/espressif/arduino-esp32/blob/master/libraries/ESP_SR/src/esp32-hal-sr.c
-
-Models:
-https://github.com/espressif/esp-sr/tree/master/model/wakenet_model/wn9_jarvis_tts
-
-Skainet example:
-https://github.com/espressif/esp-skainet/blob/master/examples/wake_word_detection/wakenet/main/main.c
-
-esp-sr example
-https://github.com/SuGlider/esp-sr/blob/master/docs/zh_CN/flash_model/README.rst
+ESP-SR Speech Recognition Framework:
+https://github.com/espressif/esp-sr/

@@ -121,6 +121,63 @@ bool Create_File_If_Not_Exists(const char* path) {
 }
 
 
+void LoadSDCardMP3Files(std::vector<String>* fileList, const char* path) {
+    if (!fileList) return;
+
+    fileList->clear();  // Clear previous entries
+
+    File dir = SD_MMC.open(path);
+    if (!dir || !dir.isDirectory()) {
+        Serial.printf("Failed to open directory: %s\n", path);
+        return;
+    }
+
+    File file = dir.openNextFile();
+    while (file) {
+        String name = file.name();
+        String lower = name;
+        lower.toLowerCase();
+        if (!file.isDirectory() && (name.endsWith(".mp3") || name.endsWith(".wav"))) {
+            // Only store relative names for consistency
+            if (name.startsWith(path)) {
+                name = name.substring(strlen(path));
+                if (name.startsWith("/")) name = name.substring(1);
+            }
+            fileList->push_back(name);
+        }
+        file = dir.openNextFile();
+    }
+    dir.close();
+}
+
+std::vector<std::pair<String, String>> ReadInternetStations(const char* path) {
+    std::vector<std::pair<String, String>> stations;
+
+    File file = SD_MMC.open(path, FILE_READ);
+    if (!file || file.isDirectory()) {
+        Serial.printf("Failed to open %s\n", path);
+        return stations;
+    }
+
+    while (file.available()) {
+        String line = file.readStringUntil('\n');
+        line.trim();
+        if (line.isEmpty()) continue;
+
+        int sepIndex = line.indexOf('|');
+        if (sepIndex <= 0 || sepIndex >= line.length() - 1) continue;
+
+        String name = line.substring(0, sepIndex);
+        String url = line.substring(sepIndex + 1);
+
+        stations.emplace_back(name, url);
+    }
+
+    file.close();
+    return stations;
+}
+
+
 int recordIndex = 1;
 
 String generateRotatingFileName() {
