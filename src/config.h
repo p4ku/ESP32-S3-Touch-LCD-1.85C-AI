@@ -29,9 +29,15 @@
 #define SCREEN_HEIGHT 360
 
 
-#define GFX_BL 5 // default backlight pin = 5
+#define GFX_BL 5                         // default backlight pin = 5
 
 #define LVGL_TICK_PERIOD_MS  10
+
+// EEPROM configuration
+#define EEPROM_SIZE 128
+#define EEPROM_VOLUME_ADDR 0             // EEPROM address where volume is stored
+#define EEPROM_WIFI_SSID_ADDR 0 + 4      // 33 bytes for SSID
+#define EEPROM_WIFI_PASS_ADDR 64 + 4
 
 
 #endif // CONFIG_H

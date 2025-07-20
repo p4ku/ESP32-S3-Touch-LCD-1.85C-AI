@@ -82,27 +82,10 @@ void Lvgl_Init()
     /*Set a tick source so that LVGL will know how much time elapsed. */
     lv_tick_set_cb(millis_cb);
 
-    // 1440 1080
-    bufSize = SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(lv_color_t) / 2; // 1 row
+    bufSize = SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(lv_color_t) / 2;
 
-    // 1440
-    // disp_draw_buf = (lv_color_t *)heap_caps_malloc(bufSize, MALLOC_CAP_INTERNAL);
     disp_draw_buf = (lv_color_t *)heap_caps_malloc(bufSize, MALLOC_CAP_SPIRAM);
     disp_draw_buf_2 = (lv_color_t *)heap_caps_malloc(bufSize, MALLOC_CAP_SPIRAM);
-
-    // bufSize = SCREEN_WIDTH * 4; // * 40; // Use partial rendering buffer
-
-    // 2880
-    // disp_draw_buf = (lv_color_t *)heap_caps_malloc(bufSize * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-
-    // bufSize = SCREEN_WIDTH * SCREEN_HEIGHT / 8;  // Full screen
-
-
-    // 2160
-    // disp_draw_buf = (lv_color_t *)heap_caps_malloc(
-    //     bufSize / 2 * sizeof(lv_color_t),
-    //     MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT
-    // );
 
     Serial.println("Buffer size:");
     Serial.println(bufSize);
@@ -118,8 +101,6 @@ void Lvgl_Init()
       lv_display_set_flush_cb(disp, my_disp_flush);
 
       lv_display_set_buffers(disp, disp_draw_buf, disp_draw_buf_2, bufSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
-      // lv_display_set_buffers(disp, disp_draw_buf, NULL, bufSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
-
 
       /*Initialize the (dummy) input device driver*/
       lv_indev_t *indev = lv_indev_create();
@@ -138,17 +119,6 @@ void Lvgl_Init()
       esp_timer_handle_t lvgl_tick_timer = NULL;
       esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer);
       esp_timer_start_periodic(lvgl_tick_timer, LVGL_TICK_PERIOD_MS * 1000);
-
-  //     /* Option 3: Or try out a demo. Don't forget to enable the demos in lv_conf.h. E.g. LV_USE_DEMOS_WIDGETS
-  //      * -------------------------------------------------------------------------------------------
-  //      */
-  //     // lv_demo_widgets();
-  //     // lv_demo_benchmark();
-  //     // lv_demo_keypad_encoder();
-  //     // lv_demo_music();
-  //     // lv_demo_stress();
-
-
     }
 }
 

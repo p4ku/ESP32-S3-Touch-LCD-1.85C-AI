@@ -5,6 +5,7 @@
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include "AIAssistant.h"
+#include "GUI/GUI.h"
 
 using namespace websockets;
 WebsocketsClient client;
@@ -12,9 +13,6 @@ String senderSessionId = "";
 
 static const char* websocketURL = ENV_WEBSOCKET_URL;
 static const char* uploadURL = ENV_UPLOAD_URL;
-
-// Audio ptr
-static Audio* audio_ptr = nullptr;
 
 // Mode and language settings
 static String currentLang = "en";
@@ -73,6 +71,9 @@ void onMessageCallback(WebsocketsMessage message)
               Serial.printf("  Sender: %s\n", sender);
               Serial.printf("  Type: %s\n", type);
               Serial.println("[AI Assistant] Server acknowledged with HELLO"); 
+
+              // Set backend connection status
+              backend_connected = true;
 
               // Save sender ID globally
               senderSessionId = String(sender);
@@ -204,23 +205,6 @@ void AIAssistant_StopStream() {
   }
 }
 
-/*
-void AIAssistant_SetLanguage(const char* langCode) {
-  currentLang = langCode;
-  if (client.available()) {
-    // client.send("[LANG:" + currentLang + "]");
-  }
-}
-*/
-
-/*
-void AIAssistant_SetMode(const char* mode) {
-  currentMode = mode;
-  if (client.available()) {
-    // client.send("[MODE:" + currentMode + "]");
-  }
-}*/
-
 void AIAssistant_Stop() {
   if (client.available()) {
     String json = R"({"type":"STOP_STREAM"})";
@@ -230,15 +214,6 @@ void AIAssistant_Stop() {
     Serial.println("[AI Assistant] Cannot send [STOP] — not connected to server");
   }
 }
-
-/*
-void WebsocketServer_Loop()
-{
-  if (client.available()) {
-    client.poll();
-  }
-}
-*/
 
 /*
   HTTP Client
@@ -320,11 +295,6 @@ void AIAssistant_UploadFile(const char* filepath) {
     delay(10);
   }
 
-  // while (client.available()) {
-  //   String line = client.readStringUntil('\n');
-  //   Serial.print(line);
-  // }
-
   while (client.available()) {
     String line = client.readStringUntil('\n');
     if (!inBody && line == "\r") {
@@ -361,7 +331,6 @@ void AIAssistant_UploadFile(const char* filepath) {
   client.stop();
   Serial.println("\n[Upload] Done.");
 }
-
 
 
 void UploadFileTask(void* param) {

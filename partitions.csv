@@ -1,10 +1,7 @@
 # Name,     Type, SubType, Offset,   Size, Flags
-# Note: if you have increased the bootloader size, make sure to update the offsets to avoid overlap,,,,
 # 	Non-volatile storage (needed for WiFi creds etc.)
 nvs,        data,   nvs,      0x9000,       0x6000,
 # 	Factory partition (contains the main application)
 factory,    0,      0,        0x10000,      6M,
-# Likely leftover test area (can remove if unused)
-# flash_test, data,   fat,      ,             528K,
 # 	SPIFFS partition for speech model (what you care about)
-model,      data,   ,   ,             5900K,
+model,      data,   ,         ,             5900K,

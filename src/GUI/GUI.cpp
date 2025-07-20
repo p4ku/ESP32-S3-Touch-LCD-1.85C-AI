@@ -2,20 +2,38 @@
 #include <freertos/queue.h>
 #include <Arduino.h>
 
+extern const uint8_t ubuntu_font[];
+extern const int ubuntu_font_size;
+
+extern const uint8_t digital7_mono_ttf[];
+extern const int digital7_mono_size;
+
+// --- Current screen pointer ---
+lv_obj_t* current_screen = nullptr;
+
 // --- Screen pointers ---
 lv_obj_t* main_screen = nullptr;
+lv_obj_t* config_screen = nullptr;
+lv_obj_t* source_screen = nullptr;
 lv_obj_t* internet_radio_screen = nullptr;
 lv_obj_t* sdcard_mp3_screen = nullptr;
 lv_obj_t* alarm_screen = nullptr;
+lv_obj_t* alarm_screen_edit = nullptr; 
 lv_obj_t* assistant_screen = nullptr;
 lv_obj_t* clock_screen = nullptr;
+lv_obj_t* wifi_info_screen = nullptr;
+lv_obj_t* wifi_discovery_screen = nullptr;
+lv_obj_t* wifi_password_screen = nullptr;
 
 // --- Global shared widgets ---
-lv_obj_t* clock_label = nullptr;
-lv_obj_t* message_label = nullptr;
-lv_obj_t* vol_text_label = nullptr;
 lv_obj_t* bigclock_label = nullptr;
 lv_obj_t* date_label = nullptr;
+lv_obj_t* clock_label = nullptr;
+lv_obj_t* seconds_label = nullptr;
+lv_obj_t* message_label = nullptr;
+lv_obj_t* vol_text_label = nullptr;
+lv_obj_t* wifi_icon = nullptr;
+lv_obj_t* backend_status = nullptr;
 
 // --- Shared audio ---
 Audio* audio_ptr = nullptr;
@@ -25,29 +43,19 @@ lv_style_t style_btn;
 lv_style_t style_btn_pressed;
 lv_style_t style_label;
 lv_style_t style_clock;
+lv_style_t style_bigclock;
+lv_style_t style_seconds;
 lv_style_t style_volume;
 lv_style_t style_message;
 
 // --- Message Queue ---
 static QueueHandle_t msgQueue = nullptr;
 
+volatile bool last_wifi_connected = false;
+volatile bool backend_connected = false;
+
 // --- Optional: filename (e.g., from assistant) ---
 String filename = "";
-
-// --- Screen Switching ---
-struct ScreenSwitchData {
-    void (*creator)();
-    lv_obj_t** screen_ptr;
-};
-
-#define SCREEN_COUNT 4
-
-ScreenSwitchData screen_table[SCREEN_COUNT] = {
-    {GUI_CreateMainScreen,        &main_screen},
-    {GUI_CreateInternetRadioScreen, &internet_radio_screen},
-    {GUI_CreateSDCardMP3Screen,   &sdcard_mp3_screen},
-    {GUI_CreateAlarmScreen,       &alarm_screen}
-};
 
 // --- GUI Lifecycle ---
 void GUI_Init(Audio& audio) {
@@ -67,12 +75,29 @@ void GUI_Init(Audio& audio) {
     lv_style_set_text_font(&style_label, &lv_font_montserrat_28);
     lv_style_set_text_color(&style_label, lv_color_white());
 
+    // Main clock style HH:MM
     lv_style_init(&style_clock);
-    lv_style_set_text_font(&style_clock, &lv_font_montserrat_48);
+    lv_font_t * font = lv_tiny_ttf_create_data(digital7_mono_ttf, digital7_mono_size, 65);
+    lv_style_set_text_font(&style_clock, font);
     lv_style_set_text_color(&style_clock, lv_palette_main(LV_PALETTE_GREEN));
+    lv_style_set_text_align(&style_clock, LV_TEXT_ALIGN_CENTER);
+
+    // Main clock seconds style
+    lv_style_init(&style_seconds);
+    lv_font_t * font_seconds = lv_tiny_ttf_create_data(digital7_mono_ttf, digital7_mono_size, 35);
+    lv_style_set_text_font(&style_seconds, font_seconds);
+    lv_style_set_text_color(&style_seconds, lv_palette_main(LV_PALETTE_GREEN));
+
+    // Big clock style HH:MM:SS
+    lv_style_init(&style_bigclock);
+    lv_font_t * font_bigclock = lv_tiny_ttf_create_data(ubuntu_font, ubuntu_font_size, 72);
+    lv_style_set_text_font(&style_bigclock, font_bigclock);
+    // lv_style_set_text_color(&style_bigclock, lv_palette_main(LV_PALETTE_LIGHT_GREEN));
 
     lv_style_init(&style_message);
-    lv_style_set_text_font(&style_message, &lv_font_montserrat_26);
+    lv_font_t * font_message = lv_tiny_ttf_create_data(ubuntu_font, ubuntu_font_size, 26);
+    lv_style_set_text_font(&style_message, font_message);
+    //lv_style_set_text_font(&style_message, &lv_font_montserrat_26);
     lv_style_set_text_color(&style_message, lv_color_hex(0xAAAAAA));
 
     lv_style_init(&style_volume);
@@ -83,33 +108,51 @@ void GUI_Init(Audio& audio) {
     GUI_SwitchToScreen(GUI_CreateMainScreen, &main_screen);
 }
 
-// --- Switching Screens ---
-void GUI_SwitchToScreen(void (*creator)(), lv_obj_t** screen_ptr) {
-    if (screen_ptr && *screen_ptr) {
+lv_group_t* global_input_group;  // Must be defined in your GUI.cpp
+
+// Add render parameter to GUI_SwitchToScreen
+void GUI_SwitchToScreen(void (*creator)(), lv_obj_t** screen_ptr, bool render) {
+    if (screen_ptr && *screen_ptr && !render) {
+        current_screen = *screen_ptr;
         lv_scr_load(*screen_ptr);
         return;
     }
 
-    creator();  // expected to set *screen_ptr
+    Serial.println("[GUI_SwitchToScreen] Async creation started");
+    lv_async_call([](void* data) {
+        auto args = (std::pair<void(*)(), lv_obj_t**>*)data;
+        args->first();  // creator()
+        if (*(args->second)) {
+            current_screen = *(args->second);
+            lv_scr_load(current_screen);
+        } else {
+            Serial.println("[GUI_SwitchToScreen] Error: screen_ptr null after async creation!");
+        }
+        delete args;
+    }, new std::pair<void(*)(), lv_obj_t**>(creator, screen_ptr));
+}
+
+
+void GUI_SwitchToScreenAfter(lv_obj_t** screen_ptr) {
     if (screen_ptr && *screen_ptr) {
+        current_screen = *screen_ptr;
         lv_scr_load(*screen_ptr);
-    } else {
-        Serial.println("[GUI_SwitchToScreen] Error: screen_ptr is null after creation!");
+        return;
     }
 }
 
 // --- Clock Update ---
 void GUI_UpdateClock(const struct tm& rtcTime) {
-    char time_str[16];
-    strftime(time_str, sizeof(time_str), "%H:%M:%S", &rtcTime);
-
-    if (clock_label)       lv_label_set_text(clock_label, time_str);
-    if (bigclock_label)    lv_label_set_text(bigclock_label, time_str);
-
-    if (date_label) {
-        char date_str[16];
-        strftime(date_str, sizeof(date_str), "%Y-%m-%d", &rtcTime);
-        lv_label_set_text(date_label, date_str);
+    if (current_screen == clock_screen) {
+        GUI_UpdateClockScreen(rtcTime);
+    } else if (current_screen == main_screen) {
+        GUI_UpdateMainScreen(rtcTime);
+    } else if (current_screen == wifi_discovery_screen) {
+        GUI_UpdateWifiDiscoveryScreen(rtcTime);
+    } else if (current_screen == wifi_info_screen) {
+        
+    } else if (current_screen == wifi_password_screen) {
+       
     }
 }
 
@@ -153,44 +196,4 @@ void GUI_Tick() {
     if (xQueueReceive(msgQueue, msg, 0) == pdTRUE) {
         GUI_UpdateMessage(msg);
     }
-}
-
-void GUI_AddSwipeSupport(lv_obj_t* screen, ScreenIndex current_screen) {
-    static ScreenIndex screen_ids[SCREEN_COUNT];
-    screen_ids[current_screen] = current_screen;
-
-    static lv_obj_t* last_pressed_obj = nullptr;
-
-    lv_obj_add_event_cb(screen, [](lv_event_t* e) {
-        lv_event_code_t code = lv_event_get_code(e);
-        lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
-        ScreenIndex* current = (ScreenIndex*)lv_event_get_user_data(e);
-
-        if (!current) return;
-
-        if (code == LV_EVENT_PRESSED) {
-            last_pressed_obj = target;
-            return;
-        }
-
-        if (code != LV_EVENT_GESTURE) return;
-
-        // Avoid swipe conflict with sliders or buttons
-        if (last_pressed_obj &&
-            (lv_obj_check_type(last_pressed_obj, &lv_slider_class) ||
-             lv_obj_check_type(last_pressed_obj, &lv_button_class))) {
-            return;
-        }
-
-        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-
-        if (dir == LV_DIR_LEFT) {
-            int next = (*current + 1) % SCREEN_COUNT;
-            GUI_SwitchToScreen(screen_table[next].creator, screen_table[next].screen_ptr);
-        } else if (dir == LV_DIR_RIGHT) {
-            int prev = (*current - 1 + SCREEN_COUNT) % SCREEN_COUNT;
-            GUI_SwitchToScreen(screen_table[prev].creator, screen_table[prev].screen_ptr);
-        }
-
-    }, LV_EVENT_ALL, &screen_ids[current_screen]);
 }

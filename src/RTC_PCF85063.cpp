@@ -38,7 +38,6 @@ void RTC_SetTime(struct tm* t) {
   Serial.println("[RTC] Failed to set UTC time after retries");
 }
 
-
 bool RTC_GetTime(struct tm* t) {
   Wire.beginTransmission(PCF85063_ADDRESS);
   Wire.write(0x04);

@@ -6,6 +6,7 @@ extern "C" {
 
 // Create the clock screen (HH:MM:SS + date)
 void GUI_CreateClockScreen();
+void GUI_UpdateClockScreen(const struct tm& rtcTime);
 
 #ifdef __cplusplus
 }

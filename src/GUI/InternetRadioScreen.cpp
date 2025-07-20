@@ -56,12 +56,10 @@ void GUI_CreateInternetRadioScreen() {
     lv_obj_set_size(back_btn, 260, 50);
     lv_obj_set_pos(back_btn, 55, 315);
     lv_obj_add_event_cb(back_btn, [](lv_event_t* e) {
-        GUI_SwitchToScreen(GUI_CreateMainScreen, &main_screen);
+        GUI_SwitchToScreen(GUI_CreateSourceScreen, &source_screen);
     }, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t* label = lv_label_create(back_btn);
     lv_label_set_text(label, "< Back");
     lv_obj_center(label);
-
-    // GUI_AddSwipeSupport(internet_radio_screen, SCREEN_INTERNET);
 }

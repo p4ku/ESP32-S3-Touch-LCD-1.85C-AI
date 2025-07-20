@@ -21,7 +21,7 @@
 #include "esp_wn_iface.h"
 #include "esp_wn_models.h"
 #include "model_path.h"
-#include "config.h"  // Include configuration file
+#include "config.h"
 
 // NTP configuration
 const char* ntpServer = "pool.ntp.org";
@@ -30,6 +30,10 @@ const int daylightOffset_sec = 3600;  // DST offset (adjust as needed)
 
 TaskHandle_t guiTaskHandle = NULL;
 static bool backlightAlreadyOff = false;
+static String last_triggered_time = "";
+
+struct tm rtcTime;  
+portMUX_TYPE rtcMux = portMUX_INITIALIZER_UNLOCKED;
 
 
 void PrintAllPartitions() {
@@ -56,6 +60,80 @@ void PrintAllPartitions() {
   esp_partition_iterator_release(it);
 }
 
+// Check if the alarm is due based on current time and alarm settings
+bool IsAlarmDue(const struct tm& rtcTime, const Alarm& alarm) {
+    if (!alarm.enabled) return false;
+
+    int weekday = rtcTime.tm_wday;  // 0 = Sunday
+    if (!alarm.weekdays[weekday]) return false;
+
+    char buf[6];
+    strftime(buf, sizeof(buf), "%H:%M", &rtcTime);
+    Serial.printf("Current time: %s\n", buf);
+
+    char time_now[6];
+    snprintf(time_now, sizeof(time_now), "%02d:%02d", rtcTime.tm_hour, rtcTime.tm_min);
+
+    Serial.printf("Checking alarm: %s vs now %s\n", alarm.time.c_str(), time_now);
+
+
+    // Serial.printf("Checking alarm: %s at %s\n", alarm.time.c_str(), buf);
+
+    return alarm.time == String(time_now);
+}
+
+// Set the RTC time safely across tasks
+void GetSafeRTC(struct tm* out) {
+    portENTER_CRITICAL(&rtcMux);
+    *out = rtcTime;
+    portEXIT_CRITICAL(&rtcMux);
+}
+
+
+// Check all alarms and trigger if any are due
+// This function is called periodically
+void CheckAlarms() {
+    struct tm now;
+    GetSafeRTC(&now);
+    for (const Alarm& alarm : alarm_list) {
+        if (IsAlarmDue(now, alarm)) {
+            String current_time = alarm.time;
+
+            if (last_triggered_time != current_time) {
+                Serial.printf("Triggering alarm: %s\n", current_time.c_str());
+                last_triggered_time = current_time;
+
+                if (audio_ptr && alarm.action_type == "mp3") {
+                    // Action: Play MP3
+                    if (!audio_ptr->connecttoFS(SD_MMC, alarm.action_path.c_str())) {
+                        Serial.println("Failed to play alarm audio");
+                    }
+                } else if (audio_ptr && alarm.action_type == "sound") {
+                    // Action: Play sound
+                    if (!audio_ptr->connecttoFS(SD_MMC, alarm.action_path.c_str())) {
+                        Serial.println("Failed to play alarm sound");
+                    }
+                } else if (audio_ptr && alarm.action_type == "radio") {
+                    // Action: Play radio stream
+                    if (!audio_ptr->connecttohost(alarm.action_path.c_str())) {
+                        Serial.println("Failed to connect to radio stream");
+                    }
+                }
+
+                // Optional: Play default tone
+                // audio_ptr->tone(1000, 3000);  // 3 sec
+
+                // Turn on LED
+                LCD_SetBacklight(true);
+
+                // Show screen
+                GUI_SwitchToScreen(GUI_CreateAlarmActiveScreen, &alarm_screen);
+                break;  // Only trigger one per check
+            }
+        }
+    }
+}
+
 //**************** Thread GUI + RTC *****************************************
 void GUITask(void *parameter) {
   static unsigned long lastGuiCheck = 0;
@@ -67,7 +145,6 @@ void GUITask(void *parameter) {
     if (millis() - last > 200) { // Update Clock every 200ms
         last = millis();
 
-        struct tm rtcTime;
         if (RTC_GetTime(&rtcTime)) {
           GUI_UpdateClock(rtcTime);
         }
@@ -170,6 +247,9 @@ void setup() {
   Serial.println("Setup SD card");
   SD_Init();
 
+  // Load alarms from SD card
+  LoadAlarms();
+
   // Write srmodels.bin to partition if needed
   write_srmodels_bin_to_partition_if_needed();
 
@@ -212,7 +292,7 @@ void setup() {
   xTaskCreatePinnedToCore(
     GUITask,             // Task function
     "GUIUpdateTask",     // Task name
-    1024 * 9,            // 9kB
+    1024 * 12,           // 12kB
     NULL,                // Task parameters
     3,                   // Priority
     &guiTaskHandle,      // Task handle
@@ -231,7 +311,6 @@ void setup() {
   sr_setup();
 }
 
-
 void loop() {
     static unsigned long last = 0;
     if (millis() - last > 1000 * 60) {
@@ -239,6 +318,9 @@ void loop() {
         last = millis();
         Serial.printf("[FreeHeap] %u bytes, Min Ever: %u\n", ESP.getFreeHeap(), ESP.getMinFreeHeap());
         Serial.printf("[PSRAM] Used: %d, Free: %d, Total: %d\n",ESP.getPsramSize()-ESP.getFreePsram(), ESP.getFreePsram(), ESP.getPsramSize());
+
+        // Check alarms every minute
+        CheckAlarms();
     }
 
     // Check if the backlight should be turned off
@@ -252,24 +334,6 @@ void loop() {
     if (digitalRead(BUTTON_PIN) == HIGH) {
         backlightAlreadyOff = false;  // Reset state when button released
     }
-
-  /*
-  if (millis() - button_time > 600)
-    {
-        if (alarm_flag == 0)
-        {
-            if (showtime() != 0)
-            {
-                open_new_song("clock.wav");
-                alarm_flag = 1;
-                display.setCursor(0, 24); 
-                display.println("ALARM!!!!!");
-                display.display();
-                delay(1000);
-                button_time = millis();
-            }
-        }
-  */
 
   // audio.loop();
   vTaskDelay(pdMS_TO_TICKS(5));

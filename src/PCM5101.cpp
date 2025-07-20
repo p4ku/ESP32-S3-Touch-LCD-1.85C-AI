@@ -1,9 +1,8 @@
 #include "Audio.h"
 #include "PCM5101.h"
 #include <EEPROM.h>
+#include "config.h"
 
-#define EEPROM_VOLUME_ADDR 0       // EEPROM address where volume is stored
-#define EEPROM_SIZE        4       // size in bytes
 #define DEFAULT_VOLUME     10      // fallback if uninitialized
 
 static uint8_t currentVolume = DEFAULT_VOLUME;
@@ -29,19 +28,6 @@ void Audio_Init() {
   // Audio
   audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
   audio.setVolume(currentVolume); // 0...21  
-
-
-  /*
-  #define AUDIO_BUFFER_SIZE         16 * 1024
-  #define I2S_OUTPUT_BUFFER_SIZE     8 * 1024
-  */
-  // If internal RAM used;
-  //audio.setBufferSize(8 * 1024);       // Internal audio read buffer (default is 16KB+)
-  // Other case 
-  //  size_t            m_buffSizePSRAM    = UINT16_MAX * 10;   // most webstreams limit the advance to 100...300Kbytes
-  //  size_t            m_buffSizeRAM      = 1600 * 10;
-
-  // audio.setOutputBufferSize(4 * 1024); // Output I2S buffer (default is 8KB+)  
 
   // Set up a hardware timer using ESP-IDF's esp_timer to periodically call the audio.loop() function,
   // which is critical for continuous audio playback using the ESP32-audioI2S library.

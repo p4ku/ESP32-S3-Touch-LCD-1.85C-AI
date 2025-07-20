@@ -582,7 +582,6 @@ void HttpServer_Begin(Audio& audio)
                 }
 
             delay(1);  // Avoid starving WiFi stack
-            // vTaskDelay(pdMS_TO_TICKS(20));
 
             if (millis() - startTime > maxDuration) {
                 Serial.printf("[STREAM] Timeout (%lu ms), sent %lu bytes\n", millis() - startTime, totalBytes);

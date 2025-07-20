@@ -1,7 +1,8 @@
 #include "MainScreen.h"
 #include "GUI.h"
 #include "PCM5101.h"
-#include "MIC_MSM.h"
+#include "MIC_MSM.h" 
+
 
 void GUI_CreateMainScreen() {
     if (main_screen) return;
@@ -11,16 +12,35 @@ void GUI_CreateMainScreen() {
     lv_obj_clear_flag(main_screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(main_screen, LV_SCROLLBAR_MODE_OFF);
 
+    // --- WiFi Icon ---
+    wifi_icon = lv_image_create(main_screen);
+    lv_image_set_src(wifi_icon, LV_SYMBOL_WIFI "");
+    lv_obj_set_pos(wifi_icon, 210, 50);
+    lv_obj_set_size(wifi_icon, 24, 24);
+    lv_obj_set_style_text_color(wifi_icon, lv_color_hex(0x999999), 0);
+
+    // --- Backend Service connection status ---
+    backend_status = lv_label_create(main_screen);
+    lv_obj_set_pos(backend_status, 180, 53);
+    lv_obj_set_size(backend_status, 24, 24);
+    lv_label_set_text(backend_status, LV_SYMBOL_REFRESH);
+    lv_obj_set_style_text_color(backend_status, lv_color_hex(0x999999), 0);
+
     // --- Clock label ---
     clock_label = lv_label_create(main_screen);
     lv_obj_add_style(clock_label, &style_clock, 0);
     lv_label_set_text(clock_label, "--:--:--");
-    lv_obj_align(clock_label, LV_ALIGN_CENTER, 0, -80);
+    lv_obj_align(clock_label, LV_ALIGN_CENTER, -20, -80);
     lv_obj_add_flag(clock_label, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(clock_label, [](lv_event_t* e) {
-        GUI_CreateClockScreen();
-        lv_scr_load(clock_screen);
+        GUI_SwitchToScreen(GUI_CreateClockScreen, &clock_screen);
     }, LV_EVENT_CLICKED, NULL);
+
+    // --- Seconds label (SS) ---
+    seconds_label = lv_label_create(main_screen);
+    lv_obj_add_style(seconds_label, &style_seconds, 0);
+    lv_label_set_text(seconds_label, "--");
+    lv_obj_align_to(seconds_label, clock_label, LV_ALIGN_OUT_RIGHT_TOP, -35, 7); // align to top-right with offset
 
     // --- Message label ---
     message_label = lv_label_create(main_screen);
@@ -76,46 +96,31 @@ void GUI_CreateMainScreen() {
     lv_label_set_text_fmt(vol_text_label, "Volume: %d", GetVolume());
     lv_obj_align_to(vol_text_label, volume_slider, LV_ALIGN_OUT_TOP_MID, 0, -10);
 
-    // --- Internet Radio Button ---
-    lv_obj_t* btn_inet = lv_button_create(main_screen);
-    lv_obj_add_style(btn_inet, &style_btn, 0);
-    lv_obj_add_style(btn_inet, &style_btn_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(btn_inet, 250, 50);
-    lv_obj_set_pos(btn_inet, 60, 320);
-    lv_obj_add_event_cb(btn_inet, [](lv_event_t* e) {
-        GUI_CreateInternetRadioScreen();
-        lv_scr_load(internet_radio_screen);
+    // --- Configuration Button ---
+    lv_obj_t* btn_config = lv_button_create(main_screen);
+    lv_obj_add_style(btn_config, &style_btn, 0);
+    lv_obj_add_style(btn_config, &style_btn_pressed, LV_STATE_PRESSED);
+    lv_obj_set_size(btn_config, 250, 50);
+    lv_obj_set_pos(btn_config, 60, 320);
+    lv_obj_add_event_cb(btn_config, [](lv_event_t* e) {
+        GUI_SwitchToScreen(GUI_CreateConfigScreen, &config_screen);
     }, LV_EVENT_CLICKED, nullptr);
-    lv_obj_t* label_inet = lv_label_create(btn_inet);
-    lv_label_set_text(label_inet, "Internet Radio");
-    lv_obj_center(label_inet);
+    lv_obj_t* label_config = lv_label_create(btn_config);
+    lv_label_set_text(label_config, "Configuration");
+    lv_obj_center(label_config);
 
-    // --- SD Card MP3 Button ---
+    // --- Source Button ---
     lv_obj_t* btn_sd = lv_button_create(main_screen);
     lv_obj_add_style(btn_sd, &style_btn, 0);
     lv_obj_add_style(btn_sd, &style_btn_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(btn_sd, 70, 70);
-    lv_obj_set_pos(btn_sd, 90, 170);
+    lv_obj_set_size(btn_sd, 90, 90);
+    lv_obj_set_pos(btn_sd, 40, 160);
     lv_obj_add_event_cb(btn_sd, [](lv_event_t* e) {
-        GUI_SwitchToScreen(GUI_CreateSDCardMP3Screen, &sdcard_mp3_screen);
+        GUI_SwitchToScreen(GUI_CreateSourceScreen, &source_screen);
     }, LV_EVENT_CLICKED, nullptr);
     lv_obj_set_style_radius(btn_sd, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_image_src(btn_sd, LV_SYMBOL_AUDIO, 0);
     lv_obj_set_style_text_font(btn_sd, lv_theme_get_font_large(btn_sd), 0);
-
-    // --- Assistant Button ---
-    lv_obj_t* btn_assistant = lv_button_create(main_screen);
-    lv_obj_add_style(btn_assistant, &style_btn, 0);
-    lv_obj_add_style(btn_assistant, &style_btn_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(btn_assistant, 70, 70);
-    lv_obj_set_pos(btn_assistant, 10, 170);
-    lv_obj_add_event_cb(btn_assistant, [](lv_event_t* e) {
-        MIC_SR_Stop();
-        GUI_SwitchToScreen(GUI_CreateAssistantScreen, &assistant_screen);
-    }, LV_EVENT_CLICKED, nullptr);
-    lv_obj_set_style_radius(btn_assistant, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_image_src(btn_assistant, LV_SYMBOL_VOLUME_MAX, 0);
-    lv_obj_set_style_text_font(btn_assistant, lv_theme_get_font_large(btn_assistant), 0);
 
     // --- Alarm Button ---
     lv_obj_t* btn_alarm = lv_button_create(main_screen);
@@ -124,12 +129,43 @@ void GUI_CreateMainScreen() {
     lv_obj_set_size(btn_alarm, 240, 40);
     lv_obj_set_pos(btn_alarm, 60, 0);
     lv_obj_add_event_cb(btn_alarm, [](lv_event_t* e) {
-        GUI_CreateAlarmScreen();
-        lv_scr_load(alarm_screen);
+        GUI_SwitchToScreen(GUI_CreateAlarmListScreen, &alarm_screen);
     }, LV_EVENT_CLICKED, nullptr);
     lv_obj_t* label_alarm = lv_label_create(btn_alarm);
     lv_label_set_text(label_alarm, "Alarm");
     lv_obj_center(label_alarm);
+}
 
-    // GUI_AddSwipeSupport(main_screen, SCREEN_MAIN);
+void GUI_UpdateMainScreen(const struct tm& rtcTime) {
+    char time_str[16]; // HH:MM:SS
+    char sec_str[4];  // SS
+    
+    strftime(time_str, sizeof(time_str), "%H:%M", &rtcTime);
+    strftime(sec_str, sizeof(sec_str), "%S", &rtcTime);
+
+    if (clock_label)       lv_label_set_text(clock_label, time_str);
+    if (seconds_label) lv_label_set_text(seconds_label, sec_str);
+    if (wifi_icon){
+        // Update WiFi icon color based on connection status
+        bool connected = WiFi.status() == WL_CONNECTED;
+        if (connected != last_wifi_connected) {
+            lv_image_set_src(wifi_icon, LV_SYMBOL_WIFI "");
+            lv_obj_set_style_text_color(wifi_icon, lv_color_hex(0x00aa00), 0);
+        } else {
+            lv_image_set_src(wifi_icon, LV_SYMBOL_WIFI "");
+            lv_obj_set_style_text_color(wifi_icon, lv_color_hex(0xff0000), 0);
+        }
+    } else {
+        lv_obj_set_style_text_color(wifi_icon, lv_color_hex(0x999999), 0);
+    }
+    if (backend_status) {
+        // Update backend status icon color based on connection status
+        if (backend_connected) {
+            lv_label_set_text(backend_status, LV_SYMBOL_REFRESH);
+            lv_obj_set_style_text_color(backend_status, lv_color_hex(0x00aa00), 0);
+        } else {
+            lv_label_set_text(backend_status, LV_SYMBOL_CLOSE);
+            lv_obj_set_style_text_color(backend_status, lv_color_hex(0xff0000), 0);
+        }
+    }
 }
