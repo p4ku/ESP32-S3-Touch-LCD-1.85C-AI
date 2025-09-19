@@ -42,7 +42,7 @@ void GUI_CreateMainScreen() {
     lv_label_set_text(seconds_label, "--");
     lv_obj_align_to(seconds_label, clock_label, LV_ALIGN_OUT_RIGHT_TOP, -35, 7); // align to top-right with offset
 
-    // --- Message label ---
+    // --- Message label (for MP3 name or Internet Radio text, etc.) ---
     message_label = lv_label_create(main_screen);
     lv_obj_add_style(message_label, &style_message, 0);
     lv_label_set_text_fmt(message_label, "%s", "");
@@ -134,6 +134,7 @@ void GUI_CreateMainScreen() {
     lv_obj_t* label_alarm = lv_label_create(btn_alarm);
     lv_label_set_text(label_alarm, "Alarm");
     lv_obj_center(label_alarm);
+    Serial.println("GUI_CreateMainScreen created");
 }
 
 void GUI_UpdateMainScreen(const struct tm& rtcTime) {

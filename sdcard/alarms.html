@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ESP32-S3 Alarms</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Navigation Menu -->
+  <nav>
+    <a href="/">Home</a>
+    <a href="/internet_radio.html">Internet Radio</a>
+    <a href="/file_explorer.html">File Explorer</a>
+    <a class="active" href="/alarms.html">Alarms</a>
+  </nav>
+
+  <h1>⏰ Alarms</h1>
+
+  <div class="alarms-container">
+
+    <div class="controls">
+        <button onclick="reloadFromDisk()">↻ Reload from disk</button>
+        <button onclick="addNewAlarm()">＋ Add alarm</button>
+    </div>
+
+    <div class="grid header">
+        <div>Enabled</div>
+        <div>Time</div>
+        <div>Type</div>
+        <div>Path / URL</div>
+        <div>Weekdays</div>
+        <div class="right">Actions</div>
+    </div>
+    <div id="alarmContainer"></div>
+
+  </div>
+
+  <script>
+    // --- Helpers ---
+    const DAYS = ["S","M","T","W","T","F","S"]; // Sun..Sat
+    function cloneAlarm(a){
+      return {
+        time: a.time || "07:00",
+        weekdays: Array.isArray(a.weekdays) && a.weekdays.length === 7 ? a.weekdays.slice(0,7) : [0,1,1,1,1,1,0],
+        action: {
+          type: (a.action && a.action.type) ? a.action.type : "mp3",
+          path: (a.action && a.action.path) ? a.action.path : ""
+        },
+        enabled: typeof a.enabled === "boolean" ? a.enabled : true
+      };
+    }
+    function defaultAlarm(){
+      return cloneAlarm({
+        time: "07:00",
+        weekdays: [0,1,1,1,1,1,0],
+        action: { type: "mp3", path: "/music/Fear of the dark.mp3" },
+        enabled: true
+      });
+    }
+
+    // --- API ---
+    async function apiGetAlarms(){
+      const res = await fetch("/alarms");
+      if (!res.ok) throw new Error("GET /alarms failed");
+      return await res.json();
+    }
+    async function apiAddAlarm(a){
+      const res = await fetch("/alarms/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(a)
+      });
+      if (!res.ok) throw new Error("POST /alarms/add failed");
+      return await res.json();
+    }
+    async function apiUpdateAlarm(index, patch){
+      const res = await fetch("/alarms/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.assign({ index }, patch))
+      });
+      if (!res.ok) throw new Error("POST /alarms/update failed");
+      return await res.json();
+    }
+    async function apiDeleteAlarm(index){
+      const res = await fetch("/alarms/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "index=" + encodeURIComponent(index)
+      });
+      if (!res.ok) throw new Error("POST /alarms/delete failed");
+      return await res.json();
+    }
+    async function apiReload(){
+      const res = await fetch("/alarms/reload", { method: "POST" });
+      if (!res.ok) throw new Error("POST /alarms/reload failed");
+      return await res.json();
+    }
+
+    // --- UI ---
+    let ALARMS = [];
+
+    function weekdayPills(a, idx){
+      const wrap = document.createElement("div");
+      for (let i = 0; i < 7; i++){
+        const pill = document.createElement("span");
+        pill.className = "pill" + (a.weekdays[i] ? " on" : "");
+        pill.textContent = DAYS[i];
+        pill.title = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][i];
+        pill.onclick = async () => {
+          const newVal = a.weekdays.slice();
+          newVal[i] = a.weekdays[i] ? 0 : 1;
+          try {
+            await apiUpdateAlarm(idx, { weekdays: newVal });
+            a.weekdays = newVal;
+            pill.classList.toggle("on");
+          } catch (e) { alert(e.message); }
+        };
+        wrap.appendChild(pill);
+      }
+      return wrap;
+    }
+
+    function createRow(a, idx){
+      const row = document.createElement("div");
+      row.className = "grid row";
+
+      // Enabled
+      const enabled = document.createElement("input");
+      enabled.type = "checkbox";
+      enabled.className = "enableToggle";
+      enabled.checked = !!a.enabled;
+      enabled.onchange = async () => {
+        try {
+          await apiUpdateAlarm(idx, { enabled: enabled.checked });
+          a.enabled = enabled.checked;
+        } catch (e) {
+          enabled.checked = !enabled.checked;
+          alert(e.message);
+        }
+      };
+      row.appendChild(enabled);
+
+      // Time
+      const time = document.createElement("input");
+      time.type = "time";
+      time.value = a.time || "07:00";
+      time.onchange = async () => {
+        try {
+          await apiUpdateAlarm(idx, { time: time.value });
+          a.time = time.value;
+        } catch (e) { alert(e.message); time.value = a.time; }
+      };
+      row.appendChild(time);
+
+      // Type
+      const type = document.createElement("select");
+      ["mp3","sound","radio"].forEach(opt => {
+        const o = document.createElement("option");
+        o.value = opt; o.textContent = opt;
+        if (a.action && a.action.type === opt) o.selected = true;
+        type.appendChild(o);
+      });
+      type.onchange = async () => {
+        try {
+          await apiUpdateAlarm(idx, { action: { type: type.value, path: path.value } });
+          a.action.type = type.value;
+        } catch (e) { alert(e.message); }
+      };
+      const typeWrap = document.createElement("div");
+      typeWrap.className = "action-wrap";
+      typeWrap.appendChild(type);
+      row.appendChild(typeWrap);
+
+      // Path
+      const path = document.createElement("input");
+      path.type = "text";
+      path.placeholder = a.action && a.action.type === "radio" ? "http://..." : "/music/file.mp3";
+      path.value = (a.action && a.action.path) || "";
+      path.onchange = async () => {
+        try {
+          await apiUpdateAlarm(idx, { action: { type: type.value, path: path.value } });
+          a.action.path = path.value;
+        } catch (e) { alert(e.message); path.value = a.action.path || ""; }
+      };
+      row.appendChild(path);
+
+      // Weekdays
+      row.appendChild(weekdayPills(a, idx));
+
+      // Actions
+      const actions = document.createElement("div");
+      actions.className = "right";
+
+      const del = document.createElement("button");
+      del.textContent = "🗑 Delete";
+      del.onclick = async () => {
+        if (!confirm("Delete this alarm?")) return;
+        try {
+          await apiDeleteAlarm(idx);
+          await loadAndRender();
+        } catch (e){ alert(e.message); }
+      };
+      actions.appendChild(del);
+
+      row.appendChild(actions);
+      return row;
+    }
+
+    async function loadAndRender(){
+      const container = document.getElementById("alarmContainer");
+      container.innerHTML = '<div class="muted">Loading…</div>';
+      try {
+        ALARMS = (await apiGetAlarms()) || [];
+        container.innerHTML = "";
+        if (!ALARMS.length){
+          const empty = document.createElement("div");
+          empty.className = "muted";
+          empty.textContent = "No alarms yet. Click “＋ Add alarm”.";
+          container.appendChild(empty);
+          return;
+        }
+        ALARMS.forEach((a, idx) => container.appendChild(createRow(a, idx)));
+      } catch (e) {
+        container.innerHTML = '<div class="muted">Failed to load alarms.</div>';
+        console.warn(e);
+      }
+    }
+
+    async function addNewAlarm(){
+      const a = defaultAlarm();
+      try {
+        await apiAddAlarm(a);
+        await loadAndRender();
+      } catch (e){ alert(e.message); }
+    }
+
+    async function reloadFromDisk(){
+      if (!confirm("Reload from /alarms.json on SD? Unsaved changes in RAM will be lost.")) return;
+      try {
+        await apiReload();
+        await loadAndRender();
+      } catch (e){ alert(e.message); }
+    }
+
+    window.addEventListener("DOMContentLoaded", loadAndRender);
+  </script>
+</body>
+</html>

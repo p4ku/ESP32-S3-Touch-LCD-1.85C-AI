@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ESP32-S3 Internet Radio</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Navigation -->
+  <nav>
+    <a href="/">Home</a>
+    <a class="active"  href="/internet_radio.html">Internet Radio</a>
+    <a href="/file_explorer.html">File Explorer</a>
+    <a href="/alarms.html">Alarms</a>
+  </nav>
+
+  <h1>📻 Internet Radio Stations</h1>
+
+  <!-- Controls -->
+  <div class="toolbar">
+    <input id="nameInput" type="text" placeholder="Station name" />
+    <input id="urlInput" type="url" placeholder="http://example.com/stream.mp3" />
+    <button id="saveBtn" class="btn btn-primary">Save Station</button>
+    <button id="resetBtn" class="btn btn-outline">Reset</button>
+    <button id="reloadBtn" class="btn">Reload</button>
+  </div>
+
+  <!-- Header -->
+  <div class="entry header grid grid-radio">
+    <div>Name</div>
+    <div>URL</div>
+    <div>Actions</div>
+    <div class="right">Delete</div>
+  </div>
+
+  <!-- List -->
+  <div id="stationList"></div>
+
+  <script>
+    let stations = [];
+    let editIndex = -1;
+
+    async function loadStations() {
+      try {
+        const resp = await fetch('/stations');
+        stations = await resp.json(); // [{name, url}, ...]
+        renderList();
+      } catch (e) {
+        console.warn('Failed to load stations', e);
+        stations = [];
+        renderList();
+      }
+    }
+
+    function renderList() {
+      const container = document.getElementById('stationList');
+      container.innerHTML = '';
+
+      if (!stations.length) {
+        const empty = document.createElement('div');
+        empty.className = 'entry row';
+        empty.textContent = 'No stations found.';
+        container.appendChild(empty);
+        return;
+      }
+
+      stations.forEach((s, i) => {
+        const row = document.createElement('div');
+        row.className = 'entry row grid grid-radio';
+
+        // Name
+        const name = document.createElement('div');
+        name.textContent = s.name;
+
+        // URL (ellipsis)
+        const url = document.createElement('div');
+        url.className = 'ellipsis';
+        url.textContent = s.url;
+
+        // Actions (Play / Edit)
+        const actions = document.createElement('div');
+        actions.className = 'action';
+        const playBtn = document.createElement('button');
+        playBtn.className = 'btn';
+        playBtn.textContent = '▶ Play';
+        playBtn.onclick = () => playStation(s.url);
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-secondary';
+        editBtn.textContent = '✏ Edit';
+        editBtn.onclick = () => startEdit(i);
+
+        actions.appendChild(playBtn);
+        actions.appendChild(editBtn);
+
+        // Delete
+        const delWrap = document.createElement('div');
+        delWrap.className = 'right';
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn btn-danger';
+        delBtn.textContent = '🗑 Delete';
+        delBtn.onclick = () => deleteStation(i);
+        delWrap.appendChild(delBtn);
+
+        row.appendChild(name);
+        row.appendChild(url);
+        row.appendChild(actions);
+        row.appendChild(delWrap);
+
+        container.appendChild(row);
+      });
+    }
+
+    function startEdit(i) {
+      editIndex = i;
+      document.getElementById('nameInput').value = stations[i].name;
+      document.getElementById('urlInput').value = stations[i].url;
+      document.getElementById('saveBtn').textContent = 'Update Station';
+    }
+
+    function resetForm() {
+      editIndex = -1;
+      document.getElementById('nameInput').value = '';
+      document.getElementById('urlInput').value = '';
+      document.getElementById('saveBtn').textContent = 'Save Station';
+    }
+
+    function validateInputs(name, url) {
+      if (!name.trim()) {
+        alert('Please enter a station name.');
+        return false;
+      }
+      if (!url.trim()) {
+        alert('Please enter a station URL.');
+        return false;
+      }
+      if (name.includes('|') || url.includes('|')) {
+        alert('The "|" character is not allowed.');
+        return false;
+      }
+      return true;
+    }
+
+    async function onSave() {
+      const name = document.getElementById('nameInput').value.trim();
+      const url  = document.getElementById('urlInput').value.trim();
+      if (!validateInputs(name, url)) return;
+
+      if (editIndex === -1) {
+        stations.push({ name, url });
+      } else {
+        stations[editIndex] = { name, url };
+      }
+      await saveToDisk();
+      resetForm();
+      await loadStations();
+    }
+
+    async function deleteStation(i) {
+      if (!confirm(`Delete station "${stations[i].name}"?`)) return;
+      stations.splice(i, 1);
+      await saveToDisk();
+      await loadStations();
+    }
+
+    // Save the whole list back to /internet_stations.txt via /upload
+    async function saveToDisk() {
+      const content = stations.map(s => `${s.name}|${s.url}`).join('\n') + '\n';
+      const file = new File([content], 'internet_stations.txt', { type: 'text/plain' });
+      const form = new FormData();
+      form.append('file', file);
+      form.append('path', '/'); // root, because server reads "/internet_stations.txt"
+
+      const btn = document.getElementById('saveBtn');
+      const old = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+
+      try {
+        const resp = await fetch('/upload', { method: 'POST', body: form });
+        if (!resp.ok) throw new Error('Upload failed');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = old;
+      }
+    }
+
+    // Play helper (same payload as your index page)
+    function playStation(url) {
+      fetch('/play', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'url=' + encodeURIComponent(url)
+      });
+    }
+
+    // Wire up controls
+    window.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('saveBtn').addEventListener('click', onSave);
+      document.getElementById('resetBtn').addEventListener('click', resetForm);
+      document.getElementById('reloadBtn').addEventListener('click', loadStations);
+      loadStations();
+    });
+  </script>
+</body>
+</html>

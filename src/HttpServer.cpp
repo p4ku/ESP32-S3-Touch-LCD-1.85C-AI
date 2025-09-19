@@ -9,12 +9,56 @@
 #include "PCM5101.h"
 #include "MIC_MSM.h"
 
+#include <ArduinoJson.h>
+#include "GUI/AlarmScreen.h"
 
 WebServer server(80);
 static Audio* audio_ptr = nullptr;
 static File uploadFile;
 static unsigned long bootMillis = millis();
 static I2SClass streamI2S;
+
+/* Helpers */
+static bool readJsonBody(JsonDocument &doc) {
+    String body = server.arg("plain");
+    DeserializationError err = deserializeJson(doc, body);
+    if (err) {
+        Serial.printf("[/alarms] JSON parse error: %s\n", err.c_str());
+        return false;
+    }
+    return true;
+}
+
+static void sendJsonOk(const String &msg = "{}") { server.send(200, "application/json", msg); }
+static void sendBadRequest(const char* m) { server.send(400, "text/plain", m); }
+static void sendNotFound(const char* m) { server.send(404, "text/plain", m); }
+
+static void alarm_to_json(const Alarm &a, JsonObject out) {
+    out["time"] = a.time;
+    JsonArray days = out.createNestedArray("weekdays");
+    for (int i = 0; i < 7; ++i) days.add(a.weekdays[i] ? 1 : 0);
+    JsonObject act = out.createNestedObject("action");
+    act["type"] = a.action_type;
+    act["path"] = a.action_path;
+    out["enabled"] = a.enabled;
+}
+
+static Alarm json_to_alarm(JsonObject obj) {
+    Alarm a;
+    a.time = obj["time"] | "07:00";
+    bool tmp[7] = {0,1,1,1,1,1,0};
+    if (obj["weekdays"].is<JsonArray>()) {
+        JsonArray arr = obj["weekdays"].as<JsonArray>();
+        for (int i = 0; i < 7 && i < (int)arr.size(); ++i) tmp[i] = (bool)arr[i];
+    }
+    for (int i=0;i<7;++i) a.weekdays[i] = tmp[i];
+    a.action_type = obj["action"]["type"] | "mp3";
+    a.action_path = obj["action"]["path"] | "";
+    a.enabled = obj["enabled"] | true;
+    return a;
+}
+
+/* HTTP Handlers */
 
 bool deleteRecursive(String path) {
     File file = SD_MMC.open(path.c_str());
@@ -592,6 +636,87 @@ void HttpServer_Begin(Audio& audio)
         streamI2S.end();
         client.stop();
         Serial.println("[STREAM] Stream ended and cleaned up");
+    });
+
+    // GET /alarms  -> returns array of alarms (with indices as array order)
+    server.on("/alarms", HTTP_GET, []() {
+        DynamicJsonDocument doc(4096);
+        JsonArray arr = doc.to<JsonArray>();
+        for (size_t i = 0; i < alarm_list.size(); ++i) {
+            JsonObject o = arr.createNestedObject();
+            o["index"] = (int)i;
+            alarm_to_json(alarm_list[i], o);
+        }
+        String out;
+        serializeJson(arr, out);
+        server.send(200, "application/json", out);
+    });
+
+    // POST /alarms/add  (Content-Type: application/json)
+    // Body: { "time":"07:30", "weekdays":[0,1,1,1,1,1,0], "action":{ "type":"mp3","path":"/music/.."}, "enabled":true }
+    server.on("/alarms/add", HTTP_POST, []() {
+        DynamicJsonDocument doc(1024);
+        if (!readJsonBody(doc) || !doc.is<JsonObject>()) {
+            return sendBadRequest("Bad JSON");
+        }
+        Alarm a = json_to_alarm(doc.as<JsonObject>());
+        alarm_list.push_back(a);
+        SaveAlarms();
+        String out = String("{\"ok\":true,\"index\":") + String((int)alarm_list.size() - 1) + "}";
+        server.send(200, "application/json", out);
+    });
+
+    // POST /alarms/update  (Content-Type: application/json)
+    // Body: { "index": 0,  [any fields to change: time, weekdays, action:{type,path}, enabled ] }
+    server.on("/alarms/update", HTTP_POST, []() {
+        DynamicJsonDocument doc(2048);
+        if (!readJsonBody(doc) || !doc.is<JsonObject>()) {
+            return sendBadRequest("Bad JSON");
+        }
+        int index = doc["index"] | -1;
+        if (index < 0 || index >= (int)alarm_list.size()) {
+            return sendNotFound("Invalid index");
+        }
+        Alarm &a = alarm_list[index];
+        if (doc.containsKey("time")) a.time = (const char*)doc["time"];
+
+        if (doc["weekdays"].is<JsonArray>()) {
+            JsonArray arr = doc["weekdays"].as<JsonArray>();
+            for (int i=0;i<7 && i<(int)arr.size(); ++i) a.weekdays[i] = (bool)arr[i];
+        }
+
+        if (doc["action"].is<JsonObject>()) {
+            JsonObject act = doc["action"].as<JsonObject>();
+            if (act.containsKey("type")) a.action_type = (const char*)act["type"];
+            if (act.containsKey("path")) a.action_path = (const char*)act["path"];
+        }
+
+        if (doc.containsKey("enabled")) a.enabled = (bool)doc["enabled"];
+
+        SaveAlarms();
+        sendJsonOk("{\"ok\":true}");
+    });
+
+    // POST /alarms/delete  (form or JSON)  index=#
+    server.on("/alarms/delete", HTTP_POST, []() {
+        int index = -1;
+        if (server.hasArg("index")) {
+            index = server.arg("index").toInt();
+        } else {
+            DynamicJsonDocument doc(256);
+            if (!readJsonBody(doc) || !doc.is<JsonObject>()) return sendBadRequest("Bad request");
+            index = doc["index"] | -1;
+        }
+        if (index < 0 || index >= (int)alarm_list.size()) return sendNotFound("Invalid index");
+        alarm_list.erase(alarm_list.begin() + index);
+        SaveAlarms();
+        sendJsonOk("{\"ok\":true}");
+    });
+
+    // POST /alarms/reload -> reload alarms from /alarms.json on SD
+    server.on("/alarms/reload", HTTP_POST, []() {
+        LoadAlarms();
+        sendJsonOk("{\"ok\":true}");
     });
 
     // Serve any static file from SDCARD /html/ if it exists and is requested via GET

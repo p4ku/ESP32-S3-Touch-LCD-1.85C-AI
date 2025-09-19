@@ -51,11 +51,47 @@ lv_style_t style_message;
 // --- Message Queue ---
 static QueueHandle_t msgQueue = nullptr;
 
+static String last_msg;
+static bool is_scrolling = false;
+
 volatile bool last_wifi_connected = false;
 volatile bool backend_connected = false;
 
 // --- Optional: filename (e.g., from assistant) ---
 String filename = "";
+
+
+// ISO-8859-1 → UTF-8 + control-char cleanup + CR/LF normalize + length cap
+static std::string to_utf8_and_sanitize(const char* in, size_t max_len = 512) {
+    if (!in) return {};
+    std::string out;
+    out.reserve(2 * strlen(in));
+    size_t n = 0;
+    const unsigned char* p = (const unsigned char*)in;
+
+    while (*p && n < max_len) {
+        unsigned c = *p++;
+
+        // Replace most control chars with space (keep \n and \t only)
+        if (c < 0x20 && c != '\n' && c != '\t') c = ' ';
+        if (c == '\r') c = ' '; // normalize CR to space
+
+        // Basic ISO-8859-1 → UTF-8 mapping
+        if (c < 0x80) {
+            out.push_back((char)c);
+        } else {
+            out.push_back((char)(0xC0 | (c >> 6)));
+            out.push_back((char)(0x80 | (c & 0x3F)));
+        }
+        ++n;
+    }
+
+    // Optional: strip LVGL recolor sequences if you don't use recolor
+    // (prevents accidental recolor parsing on '{' '#', etc.)
+    // for (size_t i = 0; i + 1 < out.size(); ) { ... }
+
+    return out;
+}
 
 // --- GUI Lifecycle ---
 void GUI_Init(Audio& audio) {
@@ -110,26 +146,48 @@ void GUI_Init(Audio& audio) {
 
 lv_group_t* global_input_group;  // Must be defined in your GUI.cpp
 
+// GUI transition state
+volatile bool g_gui_transitioning = false;
+volatile uint32_t g_last_screen_load_ms = 0;
+
+static void indevs_enable(bool en) {
+  for (lv_indev_t* i = nullptr; (i = lv_indev_get_next(i)); ) lv_indev_enable(i, en);
+}
+
 // Add render parameter to GUI_SwitchToScreen
 void GUI_SwitchToScreen(void (*creator)(), lv_obj_t** screen_ptr, bool render) {
-    if (screen_ptr && *screen_ptr && !render) {
-        current_screen = *screen_ptr;
-        lv_scr_load(*screen_ptr);
-        return;
-    }
+  if (g_gui_transitioning) return;
 
-    Serial.println("[GUI_SwitchToScreen] Async creation started");
-    lv_async_call([](void* data) {
-        auto args = (std::pair<void(*)(), lv_obj_t**>*)data;
-        args->first();  // creator()
-        if (*(args->second)) {
-            current_screen = *(args->second);
-            lv_scr_load(current_screen);
-        } else {
-            Serial.println("[GUI_SwitchToScreen] Error: screen_ptr null after async creation!");
-        }
-        delete args;
-    }, new std::pair<void(*)(), lv_obj_t**>(creator, screen_ptr));
+  // Fast path when already created (no heavy creator call)
+  if (screen_ptr && *screen_ptr && !render) {
+    g_gui_transitioning = true;
+    indevs_enable(false);
+    current_screen = *screen_ptr;
+    lv_scr_load(current_screen);
+    g_last_screen_load_ms = millis();
+    indevs_enable(true);
+    g_gui_transitioning = false;
+    return;
+  }
+
+  Serial.println("[GUI_SwitchToScreen] Async creation started");
+  g_gui_transitioning = true;
+  indevs_enable(false);
+
+  lv_async_call([](void* data) {
+    auto args = (std::pair<void(*)(), lv_obj_t**>*)data;
+    args->first();  // create
+    if (*(args->second)) {
+      current_screen = *(args->second);
+      lv_scr_load(current_screen);
+      g_last_screen_load_ms = millis();
+    } else {
+      Serial.println("[GUI_SwitchToScreen] Error: null screen after creation!");
+    }
+    indevs_enable(true);
+    g_gui_transitioning = false;
+    delete args;
+  }, new std::pair<void(*)(), lv_obj_t**>(creator, screen_ptr));
 }
 
 
@@ -156,16 +214,57 @@ void GUI_UpdateClock(const struct tm& rtcTime) {
     }
 }
 
-// --- Message ---
-void GUI_UpdateMessage(const char* msg) {
-    if (message_label) {
-        lv_obj_set_width(message_label, 340);
-        lv_label_set_long_mode(message_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
-        lv_label_set_text(message_label, msg);
-        lv_obj_align(message_label, LV_ALIGN_CENTER, 0, -40);
-    } else {
-        Serial.println("[GUI] message_label is null");
+// --- Update Message on the Main Screen ---
+void GUI_UpdateMessage(const char* msg_in) {
+    if (g_gui_transitioning) return;                   // drop during transitions
+    if (!message_label) { Serial.println("[GUI] message_label is null"); return; }
+
+    // Sanitize/encode first
+    const std::string msg = to_utf8_and_sanitize(msg_in ? msg_in : "");
+
+    // Skip if unchanged
+    if (last_msg == msg.c_str()) return;
+
+    // Ensure width once (idempotent)
+    constexpr lv_coord_t MAX_W = 340;
+    if (lv_obj_get_width(message_label) != MAX_W)
+        lv_obj_set_width(message_label, MAX_W);
+
+    // Set the text
+    lv_label_set_text(message_label, msg.c_str());
+
+    // Measure only to decide scroll state
+    const lv_font_t* fnt = (const lv_font_t*)lv_obj_get_style_text_font(message_label, LV_PART_MAIN);
+    if (!fnt) fnt = &lv_font_montserrat_18; // defensive fallback
+    lv_coord_t ls = lv_obj_get_style_text_letter_space(message_label, LV_PART_MAIN);
+    lv_coord_t ln = lv_obj_get_style_text_line_space(message_label, LV_PART_MAIN);
+
+    lv_point_t sz;
+    lv_txt_get_size(&sz, msg.c_str(), fnt, ls, ln,
+                    LV_COORD_MAX,           // natural width (no wrap)
+                    LV_TEXT_FLAG_NONE);     // no recolor; keep flags simple
+
+    const bool need_scroll = (sz.x > MAX_W);
+    if (need_scroll != is_scrolling) {
+        is_scrolling = need_scroll;
+        lv_label_set_long_mode(
+            message_label,
+            is_scrolling ? LV_LABEL_LONG_SCROLL_CIRCULAR : LV_LABEL_LONG_CLIP
+        );
+        if (!is_scrolling) {
+            // Only center when not scrolling (scroll ignores align)
+            lv_obj_set_style_text_align(message_label, LV_TEXT_ALIGN_CENTER, 0);
+        }
     }
+
+    // Align once
+    static bool aligned_once = false;
+    if (!aligned_once) {
+        lv_obj_align(message_label, LV_ALIGN_CENTER, 0, -40);
+        aligned_once = true;
+    }
+
+    last_msg = msg.c_str();
 }
 
 void GUI_ClearMessage() {
@@ -174,11 +273,12 @@ void GUI_ClearMessage() {
     }
 }
 
-// --- Queue API ---
+// Create Message Queue
 void GUI_MessageQueueInit() {
     msgQueue = xQueueCreate(3, sizeof(char[64]));
 }
 
+// Enqueue Message
 void GUI_EnqueueMessage(const char* msg) {
     if (!msgQueue) return;
     char buffer[64];
@@ -189,11 +289,19 @@ void GUI_EnqueueMessage(const char* msg) {
     Serial.println(msg);
 }
 
-void GUI_Tick() {
+// Dequeue Message and Update Message on the Main Screen
+void GUI_QueueTick() {
     if (!msgQueue) return;
+
+    static uint32_t lastUpdate = 0;
+    uint32_t now = millis();
+
+    // Only update at most every 500 ms
+    if (now - lastUpdate < 500) return;
 
     char msg[64];
     if (xQueueReceive(msgQueue, msg, 0) == pdTRUE) {
         GUI_UpdateMessage(msg);
+        lastUpdate = now;
     }
 }

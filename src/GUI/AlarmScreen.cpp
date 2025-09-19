@@ -332,10 +332,11 @@ void GUI_CreateAlarmEditScreen(int alarm_index) {
 }
 
 /*
-    Active Screen
+    Active Alarm Screen
 */
 void GUI_CreateAlarmActiveScreen() {
     if (alarm_screen) lv_obj_del(alarm_screen);
+    Serial.println("Creating GUI_CreateAlarmActiveScreen");
     alarm_screen = lv_obj_create(NULL);
     lv_obj_clear_flag(alarm_screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(alarm_screen, LV_SCROLLBAR_MODE_OFF);
@@ -356,6 +357,8 @@ void GUI_CreateAlarmActiveScreen() {
         if (audio_ptr) {
             audio_ptr->stopSong(); // Stop audio playback
         }
+        alarm_active = false;
         GUI_SwitchToScreen(GUI_CreateMainScreen, &main_screen);
     }, LV_EVENT_CLICKED, NULL);
+    Serial.println("GUI_CreateAlarmActiveScreen created");
 }

@@ -1,85 +1,363 @@
+/* -------------------------------
+   Light Navy theme variables
+--------------------------------*/
+:root {
+  /* palette */
+  --navy-900: #0b1a2b;
+  --navy-700: #143257;
+  --navy-600: #1a4173;
+
+  --blue-500: #2d7cf0;
+  --blue-600: #2566c7;
+  --blue-700: #1e54a3;
+
+  --red-500: #e05353;
+  --red-600: #c63f3f;
+
+  /* theme tokens */
+  --bg: #f7faff;               /* page background */
+  --bg-grad-1: #ffffff;
+  --bg-grad-2: #eef4ff;
+
+  --text: #1f2a44;             /* main text */
+  --text-dim: #546789;
+
+  --card: #ffffff;             /* cards / rows */
+  --card-border: #dbe7ff;      /* soft blue border */
+  --card-shadow: 0 4px 16px rgba(12, 57, 131, 0.08);
+
+  --muted-bg: #f1f6ff;         /* code blocks, muted panels */
+}
+
+/* -------------------------------
+   Base layout
+--------------------------------*/
+* { box-sizing: border-box; }
+
 body {
-    font-family: Arial, sans-serif;
-    margin: 0;
-    background-color: #f4f4f4;
-    color: #333;
+  font-family: Arial, sans-serif;
+  margin: 0;
+  color: var(--text);
+  background:
+    radial-gradient(1200px 800px at 15% -10%, rgba(45,124,240,0.10), transparent 60%),
+    linear-gradient(180deg, var(--bg-grad-2), var(--bg-grad-1));
 }
 
+/* Top nav (light) */
 nav {
-    background-color: #0057a8;
-    padding: 10px 20px;
-    display: flex;
-    justify-content: flex-start;
-    align-items: center;
+  background: #fff;
+  padding: 12px 20px;
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  border-bottom: 1px solid var(--card-border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
-
 nav a {
-    color: white;
-    text-decoration: none;
-    margin-right: 20px;
-    font-weight: bold;
+  color: var(--navy-700);
+  text-decoration: none;
+  font-weight: 600;
+  opacity: .9;
 }
-
-nav a:hover {
-    text-decoration: underline;
-}
+nav a:hover { opacity: 1; text-decoration: underline; }
 
 h1 {
-    color: #0057a8;
-    margin: 20px;
+  color: var(--navy-700);
+  margin: 20px;
+  letter-spacing: .2px;
 }
 
+/* Card sections */
 section {
-    background: #fff;
-    padding: 15px 20px;
-    margin: 20px;
-    border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  background: var(--card);
+  color: var(--text);
+  padding: 16px 20px;
+  margin: 20px;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  box-shadow: var(--card-shadow);
 }
 
-input,
-select,
+/* Inputs (full width), but NOT buttons */
+input, select, textarea {
+  width: 100%;
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: #fff;
+  color: var(--text);
+  outline: none;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--blue-500);
+  box-shadow: 0 0 0 3px rgba(45,124,240,0.2);
+}
+
+/* Active nav link */
+nav a.active,
+nav a[aria-current="page"] {
+  background: var(--nav-link-active-bg, #e8f1ff);
+  color: var(--brand, #0c3983);
+  font-weight: 700;
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+/* -------------------------------
+   Buttons: compact + blue theme
+--------------------------------*/
 button {
-    margin: 5px 0;
-    padding: 8px;
-    width: 100%;
-    box-sizing: border-box;
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4em;
+  padding: 6px 12px;           /* compact height */
+  line-height: 1.2;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: var(--blue-500);
+  color: #fff;
+  transition: background .15s ease, transform .02s ease, box-shadow .15s ease;
+  box-shadow: 0 2px 0 rgba(0,0,0,0.08);
+}
+button:hover { background: var(--blue-600); }
+button:active { transform: translateY(1px); }
+button:disabled { opacity: .6; cursor: not-allowed; }
+
+/* Optional variants */
+button.secondary {
+  background: #fff;
+  color: var(--navy-700);
+  border-color: var(--card-border);
+}
+button.secondary:hover {
+  border-color: var(--blue-600);
+  box-shadow: 0 0 0 3px rgba(45,124,240,0.15);
+}
+button.danger {
+  background: var(--red-500);
+}
+button.danger:hover {
+  background: var(--red-600);
 }
 
-.file-list {
-    margin-top: 10px;
+
+
+/* Space out action buttons in rows (File Explorer + Radio page) */
+.table-actions,
+.entry > :nth-child(3),
+.file-row > :nth-child(3) {
+  display: flex;
+  align-items: center;
+  gap: 12px;          /* increase if you want more space */
+  flex-wrap: wrap;    /* wrap nicely on narrow screens */
 }
 
-.file-row {
-    display: grid;
-    grid-template-columns: 1fr 100px 300px 80px;
-    gap: 10px;
-    align-items: center;
-    margin-bottom: 8px;
-    padding: 8px;
-    border-bottom: 1px solid #ddd;
+/* -------------------------------
+   Toolbar: single row
+--------------------------------*/
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  margin: 20px;
+}
+.toolbar > * { margin: 0 !important; }
+.toolbar input[type="file"] { width: auto; background: transparent; border: none; color: var(--text-dim); }
+@media (max-width: 560px) { .toolbar { flex-wrap: wrap; } }
+
+/* -------------------------------
+   File list grid
+--------------------------------*/
+#fileList { margin-top: 10px; }
+
+.entry, .file-row {
+  display: grid;
+  grid-template-columns: 1fr 110px 1fr 90px;
+  gap: 12px;
+  align-items: center;
+  margin: 0 20px 10px 20px;
+  padding: 10px 12px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: var(--card-shadow);
+}
+.entry.header, .file-row.header {
+  font-weight: 700;
+  background: #eaf2ff; /* soft blue header */
+  border-color: var(--card-border);
+  box-shadow: none;
 }
 
-.file-row.header {
-    font-weight: bold;
-    background-color: #e0e0e0;
-    border-radius: 4px;
+.entry > :nth-child(2),
+.file-row > :nth-child(2) { text-align: right; }
+
+/* Buttons in rows stay compact */
+.entry button, .file-row button { padding: 5px 10px; }
+
+/* Responsive tweaks */
+@media (max-width: 900px) {
+  .entry, .file-row { grid-template-columns: 1fr 90px 1fr 70px; }
+}
+@media (max-width: 640px) {
+  .entry, .file-row { grid-template-columns: 1fr 80px 1fr; }
+  .entry > :nth-child(4),
+  .file-row > :nth-child(4) { grid-column: 3; justify-self: end; }
 }
 
-.file-row span {
-    word-break: break-word;
-}
-
-.name { grid-column: 1; }
-.size { grid-column: 2; text-align: right; }
-.action { grid-column: 3; }
-
+/* Code/Status blocks */
 pre {
-    background-color: #eeeeee;
-    padding: 12px;
-    border-radius: 6px;
-    overflow-x: auto;
-    white-space: pre-wrap;
-    font-family: monospace;
-    font-size: 14px;
+  background: var(--muted-bg);
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 14px;
+  border: 1px solid var(--card-border);
+  color: var(--text);
+}
+
+/* Path display */
+.path-display {
+  margin: 0 20px 10px 20px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid var(--card-border);
+  color: var(--text-dim);
+  box-shadow: var(--card-shadow);
+}
+
+
+/* ---------------------------------
+   Alarms page styles (moved inline)
+----------------------------------*/
+
+/* If your alarms content isn’t wrapped in a <section>,
+   you can add a wrapper <div class="alarms-container">…</div>
+   OR change the selector below to match your top container. */
+.alarms-container { 
+  margin: 20px; 
+}
+
+/* Fallback: if you don’t add a wrapper, at least space the first grid block */
+.grid:first-of-type { 
+  margin: 20px; 
+}
+
+/* Grid header + rows */
+.grid {
+  display: grid;
+  grid-template-columns: 100px 160px 110px 1fr 120px 120px;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Header row */
+.grid.header {
+  font-weight: 700;
+  border-bottom: 1px solid var(--card-border, #dbe7ff);
+  padding-bottom: 6px;
+  margin-bottom: 10px;
+  background: #eaf2ff;           /* keeps visual parity with file list header */
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+/* Individual rows under header */
+.row {
+  padding: 10px 12px;
+  border: 1px solid var(--card-border, #dbe7ff);
+  border-radius: 8px;
+  background: var(--card, #fff);
+  box-shadow: var(--card-shadow, 0 4px 16px rgba(12,57,131,.08));
+  margin-bottom: 10px;
+}
+
+/* Pills for weekdays */
+.pill {
+  display: inline-block;
+  padding: 4px 8px;
+  margin: 2px;
+  border-radius: 12px;
+  background: #eef4ff;
+  color: var(--text, #1f2a44);
+  cursor: pointer;
+  user-select: none;
+  border: 1px solid var(--card-border, #dbe7ff);
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.pill.on {
+  background: var(--blue-500, #2d7cf0);
+  color: #fff;
+  border-color: var(--blue-600, #2566c7);
+}
+
+.muted { color: var(--text-dim, #546789); }
+.right { text-align: right; }
+
+.controls {
+  margin: 10px 0 16px 0;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;      /* wrap nicely on small screens */
+}
+
+input[type="time"] { width: 100px; }
+
+/* align input + select nicely on one line */
+.action-wrap {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/* slightly larger toggle without huge height */
+.enableToggle { transform: scale(1.05); }
+
+/* Responsive: tighten columns on smaller screens */
+@media (max-width: 900px) {
+  .grid { grid-template-columns: 85px 150px 100px 1fr 100px 100px; }
+}
+
+/* Internet Radio page grid */
+.grid.grid-radio {
+  display: grid;
+  grid-template-columns: 220px 1fr 220px 100px; /* Name | URL | Actions | Delete */
+  gap: 10px;
+  align-items: center;
+}
+
+/* Truncate long URLs gracefully */
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Make the list rows look like your other cards */
+#stationList .entry.row {
+  background: var(--card, #fff);
+  border: 1px solid var(--card-border, #dbe7ff);
+  border-radius: 8px;
+  box-shadow: var(--card-shadow, 0 4px 16px rgba(12,57,131,.08));
+  margin: 0 20px 10px 20px;
+  padding: 10px 12px;
+}
+
+/* Responsive: tighten columns on smaller screens */
+@media (max-width: 900px) {
+  .grid.grid-radio { grid-template-columns: 180px 1fr 200px 90px; }
+}
+@media (max-width: 600px) {
+  .grid.grid-radio { grid-template-columns: 140px 1fr 160px 80px; }
 }

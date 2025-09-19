@@ -1,12 +1,14 @@
 #include "LVGL_ST77916.h"
 #include "Touch_CST816.h"
 #include "MIC_MSM.h"
+#include "GUI/GUI.h"
 
 Arduino_GFX* gfx;
 
 bool backlight_on = true;
 unsigned long last_touch_time = 0;
-const unsigned long INACTIVITY_TIMEOUT_MS = 30000;
+const unsigned long INACTIVITY_TIMEOUT_MS = 30000; // 30 seconds
+const uint32_t ALARM_AUTO_TIMEOUT_MS = 5 * 60000;  // 5 minutes
 
 uint32_t bufSize;
 lv_display_t *disp;
@@ -111,19 +113,27 @@ void Lvgl_Init()
       // Tell LVGL how much time has passed, crucial for animations, input timing, and scheduling internal tasks.
       const esp_timer_create_args_t lvgl_tick_timer_args = {
         .callback = &increase_lvgl_tick,        // Function to call
+        .arg = nullptr,
         .dispatch_method = ESP_TIMER_TASK,      // Run in ESP-IDF timer task (not ISR)
         .name = "lvgl_tick",                    // Debug-friendly name
         .skip_unhandled_events = true           // Skip if missed (prevents backlog)
       };
 
       esp_timer_handle_t lvgl_tick_timer = NULL;
-      esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer);
-      esp_timer_start_periodic(lvgl_tick_timer, LVGL_TICK_PERIOD_MS * 1000);
+      ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer));
+      ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, LVGL_TICK_PERIOD_MS * 1000)); // 10ms
     }
 }
 
-void Lvgl_Touchpad_Read(lv_indev_t *indev_drv, lv_indev_data_t *data) {
-  
+void Lvgl_Touchpad_Read(lv_indev_t *indev, lv_indev_data_t *data) {
+  // If a transition is in progress, ignore touches
+  if (g_gui_transitioning || (millis() - g_last_screen_load_ms < 120)) {
+    data->state = LV_INDEV_STATE_REL;
+    data->point.x = 0;
+    data->point.y = 0;
+    return;
+  }
+
   if (Touch_interrupts) {
     Touch_interrupts = false;
     detachInterrupt(CST816_INT_PIN);
@@ -131,30 +141,24 @@ void Lvgl_Touchpad_Read(lv_indev_t *indev_drv, lv_indev_data_t *data) {
     attachInterrupt(CST816_INT_PIN, Touch_CST816_ISR, FALLING);
   }
 
-  // Always update last touch time
-  if (touch_data.points != 0x00) {
+  if (touch_data.points != 0) {
     last_touch_time = millis();
-
     if (!backlight_on) {
-      LCD_SetBacklight(true);  // Wake screen
-      MIC_SR_Stop(); // Stop any ongoing speech recognition
-
-      // Clear current touch, do not send to UI
+      LCD_SetBacklight(true);
+      MIC_SR_Stop();
       data->state = LV_INDEV_STATE_REL;
-      data->point.x = 0;
-      data->point.y = 0;
+      data->point.x = data->point.y = 0;
       return;
     }
-
     data->point.x = touch_data.x;
     data->point.y = touch_data.y;
-    data->state = LV_INDEV_STATE_PR;
+    data->state   = LV_INDEV_STATE_PR;
   } else {
-    data->state = LV_INDEV_STATE_REL;
+    data->state   = LV_INDEV_STATE_REL;
   }
 
-  touch_data.x = 0;
-  touch_data.y = 0;
+  // clear sampled data
+  touch_data.x = touch_data.y = 0;
   touch_data.points = 0;
   touch_data.gesture = NONE;
 }

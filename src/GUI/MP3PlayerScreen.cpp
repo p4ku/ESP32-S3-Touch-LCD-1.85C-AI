@@ -71,4 +71,6 @@ void GUI_CreateSDCardMP3Screen() {
 
     // Cleanup list object
     delete file_list;
+
+    Serial.println("GUI_CreateSDCardMP3Screen created");
 }

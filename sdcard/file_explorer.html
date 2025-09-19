@@ -9,7 +9,9 @@
     <!-- Navigation Menu -->
     <nav>
         <a href="/">Home</a>
-        <a href="/file_explorer.html">File Explorer</a>
+        <a href="/internet_radio.html">Internet Radio</a>
+        <a class="active" href="/file_explorer.html">File Explorer</a>
+        <a href="/alarms.html">Alarms</a>
     </nav>
 
 <h1>📁 ESP32-S3-Touch-LCD-1.85C File Explorer</h1>
@@ -76,6 +78,7 @@ async function loadFiles() {
 
     // Create name
     const nameCell = document.createElement('div');
+    nameCell.className = 'name';
     nameCell.innerText = item.name;
     if (item.isDir) {
       nameCell.style.fontWeight = 'bold';
@@ -88,9 +91,11 @@ async function loadFiles() {
 
     // Create size
     const sizeCell = document.createElement('div');
+    sizeCell.className = 'size';
     sizeCell.innerText = item.isDir ? '-' : formatBytes(item.size);
 
     const actionCell = document.createElement('div');
+    actionCell.className = 'table-actions';
 
     // Create rename button
     const renameBtn = document.createElement('button');

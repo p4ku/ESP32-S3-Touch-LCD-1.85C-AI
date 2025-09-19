@@ -135,6 +135,7 @@ pio run
 ### Upload Firmware
 ```bash
 pio run -t upload
+pio run -t upload --upload-port /dev/tty.usbmodem2101
 ```
 
 ### Upload Filesystem (models from ./data)
@@ -199,13 +200,16 @@ pio device monitor
 ### Upload files to SDCARD
 
 ```
-curl -X POST http://<esp32-ip>/upload -F "file=@./sdcard/style.css" -F "path=/"
-curl -X POST http://<esp32-ip>/upload -F "file=@./sdcard/file_explorer.html" -F "path=/"
-curl -X POST http://<esp32-ip>/upload -F "file=@./sdcard/index.html" -F "path=/"
-curl -X POST http://<esp32-ip>/upload -F "file=@./sdcard/internet_stations.txt" -F "path=/"
-curl -X POST http://<esp32-ip>/upload -F "file=@./data/srmodels.bin" -F "path=/"
-```
+export ESP32_IP=http://192.168.0.32
 
+curl -X POST "$ESP32_IP/upload?path=/" -F "file=@./sdcard/style.css"
+curl -X POST "$ESP32_IP/upload?path=/html/" -F "file=@./sdcard/index.html" 
+curl -X POST "$ESP32_IP/upload?path=/html/" -F "file=@./sdcard/internet_radio.html"
+curl -X POST "$ESP32_IP/upload?path=/html/" -F "file=@./sdcard/file_explorer.html" 
+curl -X POST "$ESP32_IP/upload?path=/html/" -F "file=@./sdcard/alarms.html" 
+curl -X POST "$ESP32_IP/upload?path=/" -F "file=@./sdcard/internet_stations.txt"
+curl -X POST "$ESP32_IP/upload?path=/" -F "file=@./data/srmodels.bin"
+```
 
 ### Display file content from SDCARD
 ```

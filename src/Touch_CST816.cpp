@@ -1,4 +1,5 @@
 #include "Touch_CST816.h"
+#include "GUI/GUI.h"
 
 struct CST816_Touch touch_data = {0};
 volatile uint8_t Touch_interrupts = 0;
@@ -6,30 +7,28 @@ volatile uint8_t Touch_interrupts = 0;
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // I2C
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-bool I2C_Read_Touch(uint16_t Driver_addr, uint8_t Reg_addr, uint8_t *Reg_data, uint32_t Length)
-{
-  Wire.beginTransmission(Driver_addr);
-  Wire.write(Reg_addr); 
-  if ( Wire.endTransmission(true)){
-    Serial.printf("The I2C transmission fails. - I2C Read\r\n");
-    return true;
+bool I2C_Read_Touch(uint16_t addr, uint8_t reg, uint8_t* data, uint32_t len) {
+  Wire.beginTransmission(addr);
+  Wire.write(reg);
+  if (Wire.endTransmission(true) != 0) {             // non-zero = error
+    Serial.printf("I2C Read: endTransmission failed\r\n");
+    return false;
   }
-  Wire.requestFrom(Driver_addr, Length);
-  for (int i = 0; i < Length; i++) {
-    *Reg_data++ = Wire.read();
+  int got = Wire.requestFrom(addr, (int)len);
+  if (got != (int)len) {
+    Serial.printf("I2C Read: short read (%d/%u)\r\n", got, (unsigned)len);
+    return false;
   }
+  for (uint32_t i = 0; i < len; ++i) data[i] = Wire.read();
   return true;
 }
-bool I2C_Write_Touch(uint8_t Driver_addr, uint8_t Reg_addr, const uint8_t *Reg_data, uint32_t Length)
-{
-  Wire.beginTransmission(Driver_addr);
-  Wire.write(Reg_addr);       
-  for (int i = 0; i < Length; i++) {
-    Wire.write(*Reg_data++);
-  }
-  if ( Wire.endTransmission(true))
-  {
-    Serial.printf("The I2C transmission fails. - I2C Write\r\n");
+
+bool I2C_Write_Touch(uint8_t addr, uint8_t reg, const uint8_t* data, uint32_t len) {
+  Wire.beginTransmission(addr);
+  Wire.write(reg);
+  for (uint32_t i = 0; i < len; ++i) Wire.write(*data++);
+  if (Wire.endTransmission(true) != 0) {
+    Serial.printf("I2C Write: endTransmission failed\r\n");
     return false;
   }
   return true;
@@ -86,7 +85,7 @@ portMUX_TYPE I2C_mux = portMUX_INITIALIZER_UNLOCKED;
 // reads sensor and touches
 // updates Touch Points
 uint8_t Touch_Read_Data(void) {
-  delay(2); // <-- Give CST816 time to settle
+  // delay(2); // <-- Give CST816 time to settle
 
   uint8_t buf[6];
 

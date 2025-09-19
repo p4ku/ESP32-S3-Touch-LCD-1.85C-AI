@@ -141,6 +141,7 @@ void GUI_CreateWifiDiscoveryScreen() {
         lv_obj_t* label_back = lv_label_create(back_btn);
         lv_label_set_text(label_back, "< Back");
         lv_obj_center(label_back);
+        Serial.println("GUI_CreateWifiDiscoveryScreen created");
     } else {
         // If screen already exists, refresh the list
         lv_obj_clean(wifi_list);

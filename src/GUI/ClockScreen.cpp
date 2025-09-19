@@ -38,6 +38,7 @@ void GUI_CreateClockScreen() {
     lv_obj_center(label_back);
 
     // GUI_AddSwipeSupport(clock_screen, SCREEN_CLOCK);  // if needed
+    Serial.println("GUI_CreateClockScreen created");
 }
 
 void GUI_UpdateClockScreen(const struct tm& rtcTime) {

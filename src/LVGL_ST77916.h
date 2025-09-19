@@ -6,11 +6,13 @@
 #include "lvgl.h"
 #include "config.h"
 
-extern Arduino_GFX* gfx;
+// Static constants
+extern const unsigned long INACTIVITY_TIMEOUT_MS;
+extern const uint32_t ALARM_AUTO_TIMEOUT_MS;
 
+extern Arduino_GFX* gfx;
 extern bool backlight_on;
 extern unsigned long last_touch_time;
-extern const unsigned long INACTIVITY_TIMEOUT_MS;
 
 extern uint32_t bufSize;
 extern lv_display_t *disp;

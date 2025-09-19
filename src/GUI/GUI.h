@@ -44,7 +44,11 @@ void GUI_UpdateClock(const struct tm& rtcTime);
 void GUI_UpdateMessage(const char* msg);
 void GUI_ClearMessage();
 void GUI_EnqueueMessage(const char* msg);
-void GUI_Tick();
+void GUI_QueueTick();
+
+// Alarm state
+static volatile bool alarm_active = false;
+static uint32_t alarm_started_ms = 0;
 
 // Shared audio
 extern Audio* audio_ptr;
@@ -107,5 +111,9 @@ extern volatile bool last_wifi_connected;
 extern volatile bool backend_connected;
 
 extern lv_group_t* global_input_group; 
+
+// GUI transition state
+extern volatile bool g_gui_transitioning;
+extern volatile uint32_t g_last_screen_load_ms;
 
 

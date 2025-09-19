@@ -29,11 +29,19 @@ const long gmtOffset_sec = 3600;      // Adjust GMT offset (3600 for CET)
 const int daylightOffset_sec = 3600;  // DST offset (adjust as needed)
 
 TaskHandle_t guiTaskHandle = NULL;
+// guiTaskStackSize = 8 * 1024
+const uint32_t guiTaskStackSize = 16 * 1024;
+
+TaskHandle_t httpTaskHandle = NULL;
+// httpTaskStackSize = 8 * 1024
+const uint32_t httpTaskStackSize = 8 * 1024;
+
 static bool backlightAlreadyOff = false;
 static String last_triggered_time = "";
 
 struct tm rtcTime;  
 portMUX_TYPE rtcMux = portMUX_INITIALIZER_UNLOCKED;
+
 
 
 void PrintAllPartitions() {
@@ -73,12 +81,7 @@ bool IsAlarmDue(const struct tm& rtcTime, const Alarm& alarm) {
 
     char time_now[6];
     snprintf(time_now, sizeof(time_now), "%02d:%02d", rtcTime.tm_hour, rtcTime.tm_min);
-
     Serial.printf("Checking alarm: %s vs now %s\n", alarm.time.c_str(), time_now);
-
-
-    // Serial.printf("Checking alarm: %s at %s\n", alarm.time.c_str(), buf);
-
     return alarm.time == String(time_now);
 }
 
@@ -88,7 +91,6 @@ void GetSafeRTC(struct tm* out) {
     *out = rtcTime;
     portEXIT_CRITICAL(&rtcMux);
 }
-
 
 // Check all alarms and trigger if any are due
 // This function is called periodically
@@ -103,21 +105,24 @@ void CheckAlarms() {
                 Serial.printf("Triggering alarm: %s\n", current_time.c_str());
                 last_triggered_time = current_time;
 
+                alarm_active = true;
+                alarm_started_ms = millis();
+
+                MIC_SR_Stop();   
+                vTaskDelay(pdMS_TO_TICKS(5));
+
                 if (audio_ptr && alarm.action_type == "mp3") {
                     // Action: Play MP3
-                    if (!audio_ptr->connecttoFS(SD_MMC, alarm.action_path.c_str())) {
-                        Serial.println("Failed to play alarm audio");
-                    }
+                    if (!audio_ptr->connecttoFS(SD_MMC, alarm.action_path.c_str())) 
+                        Serial.println("Failed to play alarm audio");            
                 } else if (audio_ptr && alarm.action_type == "sound") {
                     // Action: Play sound
-                    if (!audio_ptr->connecttoFS(SD_MMC, alarm.action_path.c_str())) {
-                        Serial.println("Failed to play alarm sound");
-                    }
+                    if (!audio_ptr->connecttoFS(SD_MMC, alarm.action_path.c_str())) 
+                        Serial.println("Failed to play alarm sound");                
                 } else if (audio_ptr && alarm.action_type == "radio") {
                     // Action: Play radio stream
-                    if (!audio_ptr->connecttohost(alarm.action_path.c_str())) {
-                        Serial.println("Failed to connect to radio stream");
-                    }
+                    if (!audio_ptr->connecttohost(alarm.action_path.c_str())) 
+                        Serial.println("Failed to connect to radio stream");                
                 }
 
                 // Optional: Play default tone
@@ -126,20 +131,21 @@ void CheckAlarms() {
                 // Turn on LED
                 LCD_SetBacklight(true);
 
-                // Show screen
+                // Show alarm screen
                 GUI_SwitchToScreen(GUI_CreateAlarmActiveScreen, &alarm_screen);
-                break;  // Only trigger one per check
+                break;
             }
         }
     }
 }
 
-//**************** Thread GUI + RTC *****************************************
+//**************** Thread GUI + Get RTC time *****************************************
 void GUITask(void *parameter) {
   static unsigned long lastGuiCheck = 0;
   char displayedTime[9] = "";
   Serial.println("Starting GUITask ...");
 
+  const TickType_t period = pdMS_TO_TICKS(10); // 10ms -> ~100 Hz ; 50ms -> ~33fps
   while (true) {
     static unsigned long last = 0;
     if (millis() - last > 200) { // Update Clock every 200ms
@@ -149,13 +155,26 @@ void GUITask(void *parameter) {
           GUI_UpdateClock(rtcTime);
         }
 
-        GUI_Tick();  // Call this every ~200ms - read from GUI queue
+        GUI_QueueTick();  // Call this every ~200ms - read from GUI queue
     }
 
-    // Check if backlight should be turned off
-    if (backlight_on && (millis() - last_touch_time > INACTIVITY_TIMEOUT_MS)) {
+    // Check if backlight should be turned off and not alarm active
+    if (!alarm_active && backlight_on && (millis() - last_touch_time > INACTIVITY_TIMEOUT_MS)) {
       LCD_SetBacklight(false);
       MIC_SR_Start();
+    }
+
+    // Alarm auto-timeout (independent timer)
+    if (alarm_active) {
+        // Hard stop strictly after ALARM_AUTO_TIMEOUT_MS
+        if (millis() - alarm_started_ms > ALARM_AUTO_TIMEOUT_MS) {
+            alarm_active = false;
+            if (audio_ptr) audio_ptr->stopSong();
+
+            LCD_SetBacklight(false);
+            MIC_SR_Start();
+            lv_async_call([](void*) { GUI_SwitchToScreen(GUI_CreateMainScreen, &main_screen); }, nullptr);
+        }
     }
 
     if (millis() - lastGuiCheck >= 60 * 1000) {  // 60 seconds
@@ -163,14 +182,27 @@ void GUITask(void *parameter) {
 
         if (guiTaskHandle) {
             UBaseType_t watermark = uxTaskGetStackHighWaterMark(guiTaskHandle);
-            Serial.printf("[GUI Task] Min free stack: %u words (%u bytes)\n",
-                          watermark, watermark * sizeof(StackType_t));
+            Serial.printf("[GUI Task] Total stack size: %u bytes, Min free stack: %u words (%u bytes)\n",
+                          guiTaskStackSize, watermark, watermark * sizeof(StackType_t));
+        }
+        if (httpTaskHandle) {
+            UBaseType_t watermark_http = uxTaskGetStackHighWaterMark(httpTaskHandle);
+            Serial.printf("[HTTP Task] Total stack size: %u bytes, Min free stack: %u words (%u bytes)\n",
+                          httpTaskStackSize, watermark_http, watermark_http * sizeof(StackType_t));
         }
     }
 
-    lv_timer_handler(); // Call LVGL timer handler
-    HttpServer_Loop();  // Process HTTP requests
-    vTaskDelay(pdMS_TO_TICKS(50));  // update ~33fps
+    lv_timer_handler(); // Call LVGL timer handler - execution context
+   
+    vTaskDelay(period);
+  }
+}
+
+//**************** Thread HTTP *****************************************
+void HttpTask(void*) {
+  for (;;) {
+     HttpServer_Loop();  // Process HTTP requests
+    vTaskDelay(pdMS_TO_TICKS(2)); // yield a bit
   }
 }
 
@@ -191,7 +223,61 @@ void sr_setup()
   MIC_SR_Start();
 }
 
+// Helper to push GUI messages safely from the audio callback
+static inline void enqueue_gui_msg(const char* s) {
+  if (!s) return;
+  String sinfo(s);
+  sinfo.replace("|", "\n");
+  GUI_EnqueueMessage(sinfo.c_str());    // thread-safe (queue)
+}
+
+// Single callback for all audio events (v3.4.2+)
+static void my_audio_info(Audio::msg_t m) {
+  switch (m.e) {
+    //Show on the GUI (scroll when long, center when short)
+    case Audio::evt_id3data:        // ID3/metadata
+    case Audio::evt_name:           // station name / icy-name
+    case Audio::evt_streamtitle:    // stream title (current song)
+      enqueue_gui_msg(m.msg);
+      break;
+
+    // Everything else -> just log
+    case Audio::evt_info:
+      Serial.printf("info: ............. %s\n", m.msg); break;
+    case Audio::evt_eof:
+      Serial.printf("end of file: ...... %s\n", m.msg);
+
+      // Clear alarm state 
+      alarm_active = false;
+      break;
+    case Audio::evt_bitrate:
+      Serial.printf("bitrate: .......... %s\n", m.msg); break;
+    case Audio::evt_icyurl:
+      Serial.printf("icy URL: .......... %s\n", m.msg); break;
+    case Audio::evt_lasthost:
+      Serial.printf("last URL: ......... %s\n", m.msg); break;
+    case Audio::evt_icylogo:
+      Serial.printf("icy logo: ......... %s\n", m.msg); break;
+    case Audio::evt_icydescription:
+      Serial.printf("icy descr: ........ %s\n", m.msg); break;
+    case Audio::evt_image:
+      // APIC cover image segments info
+      for (int i = 0; i < m.vec.size(); i += 2) {
+        Serial.printf("cover image seg %02d, pos %07lu, len %05lu\n",
+                      i/2, m.vec[i], m.vec[i+1]);
+      }
+      break;
+    case Audio::evt_lyrics:
+      Serial.printf("sync lyrics: ...... %s\n", m.msg); break;
+    case Audio::evt_log:
+      Serial.printf("audio log: ........ %s\n", m.msg); break;
+    default:
+      Serial.printf("message: .......... %s\n", m.msg); break;
+  }
+}
+
 void setup() {
+  Audio::audio_info_callback = my_audio_info;
   Serial.begin(115200);
   Wire.begin(11, 10, 400000);
   Serial.println("Starting setup...");
@@ -285,18 +371,29 @@ void setup() {
   gfx->setCursor(75, 220+40);
   gfx->println("AI Assistent started");
 
-  delay(100); // Wait before starting loop
+  delay(100); // Wait before starting threads
+  Serial.println("Setup new threads");
+
+  // Create Task for HTTP Server
+  xTaskCreatePinnedToCore(
+    HttpTask, 
+    "HttpTask",
+    httpTaskStackSize,    // 8kB stack size
+    nullptr,              // task parameters
+    1,                    // lower priority than GUI
+    &httpTaskHandle,      // task handle
+    0                     // core 0
+  );
 
   // Create Task for GUI Updates
-  Serial.println("Setup new Thread 100 ms");
   xTaskCreatePinnedToCore(
     GUITask,             // Task function
     "GUIUpdateTask",     // Task name
-    1024 * 12,           // 12kB
+    guiTaskStackSize,    // 16kB stack size
     NULL,                // Task parameters
-    3,                   // Priority
+    2,                   // Priority
     &guiTaskHandle,      // Task handle
-    1                    // Core ID (ESP32 typically uses core 1 for tasks)
+    1                    // Core ID (ESP32 typically uses core 1 for tasks and UI)
   );
 
   char taskList[512];
@@ -336,61 +433,5 @@ void loop() {
     }
 
   // audio.loop();
-  vTaskDelay(pdMS_TO_TICKS(5));
+  vTaskDelay(pdMS_TO_TICKS(50));
 }
-
-// Audio I2S info
-void audio_info(const char *info){
-    Serial.print("info        "); Serial.println(info);
-}
-void audio_id3data(const char *info){  //id3 metadata
-    Serial.print("id3data     ");Serial.println(info);
-
-    if (info) {
-        String sinfo(info);
-        sinfo.replace("|", "\n");
-        GUI_EnqueueMessage(sinfo.c_str());  // non-blocking, safe
-    }
-}
-void audio_eof_mp3(const char *info){  //end of file
-    Serial.print("eof_mp3     ");Serial.println(info);
-}
-void audio_showstation(const char *info){
-    Serial.print("station     ");Serial.println(info);
-
-    if (info) {
-        String sinfo(info);
-        sinfo.replace("|", "\n");
-        GUI_EnqueueMessage(sinfo.c_str());  // non-blocking, safe
-    }
-}
-void audio_showstreaminfo(const char *info){
-    Serial.print("streaminfo  ");Serial.println(info);
-    
-}
-void audio_showstreamtitle(const char *info){
-    Serial.print("streamtitle ");Serial.println(info);
-
-    if (info) {
-        String sinfo(info);
-        sinfo.replace("|", "\n");
-        GUI_EnqueueMessage(sinfo.c_str());  // non-blocking, safe
-    }
-}
-void audio_bitrate(const char *info){
-    Serial.print("bitrate     ");Serial.println(info);
-}
-void audio_commercial(const char *info){  //duration in sec
-    Serial.print("commercial  ");Serial.println(info);
-}
-void audio_icyurl(const char *info){  //homepage
-    Serial.print("icyurl      ");Serial.println(info);
-}
-void audio_lasthost(const char *info){  //stream URL played
-    Serial.print("lasthost    ");Serial.println(info);
-}
-void audio_eof_speech(const char *info){
-    Serial.print("eof_speech  ");Serial.println(info);
-}
-
-

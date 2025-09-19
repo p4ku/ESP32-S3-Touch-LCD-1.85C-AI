@@ -69,7 +69,8 @@ void GUI_CreateSourceScreen() {
     lv_obj_t* label = lv_label_create(back_btn);
     lv_label_set_text(label, "< Back");
     lv_obj_center(label);
-   
+
+    Serial.println("GUI_CreateSourceScreen created");
 }
 
 void GUI_UpdateSourceScreen() {

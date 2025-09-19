@@ -59,7 +59,7 @@ void GUI_CreateConfigScreen() {
     lv_obj_t* label = lv_label_create(back_btn);
     lv_label_set_text(label, "< Back");
     lv_obj_center(label);
-   
+    Serial.println("GUI_CreateConfigScreen created");
 }
 
 void GUI_UpdateConfigScreen() {
