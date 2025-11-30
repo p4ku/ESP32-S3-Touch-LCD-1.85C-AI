@@ -1489,11 +1489,6 @@
 #endif /* LV_BUILD_DEMOS */
 
 
-// #define LV_MEM_CUSTOM 1
-// #define LV_MEM_POOL_INCLUDE     "esp_heap_caps.h"
-// #define LV_MEM_POOL_ALLOC(size) heap_caps_malloc(size, MALLOC_CAP_SPIRAM)
-
-
 /*--END OF LV_CONF_H--*/
 
 #endif /*LV_CONF_H*/

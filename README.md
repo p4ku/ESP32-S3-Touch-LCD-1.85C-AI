@@ -129,6 +129,7 @@ export WIFI_PASSWORD=""
 export WEBSOCKET_URL="ws://<server-ws-url>:8765/"
 export UPLOAD_URL="http://<server-upload-url>:8766/upload"
 source ~/.platformio/penv/bin/activate
+pio run --target clean
 pio run
 ```
 
